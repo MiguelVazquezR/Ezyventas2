@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Api\V1\Transactions;
 
+use App\Enums\PaymentMethod;
 use App\Enums\TransactionStatus;
+use App\Exceptions\Pos\PaymentExceedsPendingBalanceException;
 use App\Http\Controllers\Api\V1\Concerns\ResolvesOpenCashRegisterSession;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Transactions\CancelTransactionRequest;
@@ -87,13 +89,19 @@ class TransactionController extends Controller
             : 0.0;
 
         try {
-            $this->payments->applyPaymentToTransaction($transaction, $request->paymentData(), $sessionId);
+            $change = $this->payments->applyPaymentToTransaction($transaction, $request->paymentData(), $sessionId);
+        } catch (PaymentExceedsPendingBalanceException $exception) {
+            return response()->json([
+                'code' => PaymentExceedsPendingBalanceException::CODE,
+                'message' => $exception->getMessage(),
+            ], 422);
         } catch (\Exception $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
         return response()->json([
             'transaction' => $this->transactions->detailPayload($this->findForBranch($transaction->id, (int) $user->branch_id)),
+            'change' => $change,
             'print' => $this->paymentReceipt(
                 $transaction,
                 $previousDue,

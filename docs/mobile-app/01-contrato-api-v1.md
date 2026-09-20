@@ -722,14 +722,18 @@ Errores esperados:
 - `422` sin sesión abierta (salvaguarda del servidor; el POS debe abrir caja o unirse antes de cobrar): `{"message": "Necesitas una sesión de caja abierta para registrar ventas."}`
 - `422` crédito sin cliente: `{"message": "Selecciona un cliente para dejar saldo pendiente."}`
 - `422` crédito excedido: `{"message": "El cliente no tiene crédito disponible suficiente."}`
+- `422` pago mayor al saldo pendiente con `tarjeta`, `transferencia` o `saldo`:
+  `{"code": "payment_exceeds_pending", "message": "El monto total del pago excede el saldo pendiente."}`
+  (en **efectivo** sí se permite: el sobrante es el cambio que devuelve `change`).
 - `409` `client_uuid` repetido con datos distintos: `{"message": "Esta operación ya fue registrada."}`
 
 > `change` (cambio en efectivo) lo calcula el servidor: `Σ pagos - total` cuando el pago es
 > en efectivo puro. La app **no** lo envía.
 
-> **Detalles de la implementación (Fase 3):** el servidor **limita el pago guardado** al total de la
-> venta (no guarda sobrepagos), así que `change` se calcula con lo que envió la app y el `total_paid`
-> queda igual al total. `print.template_ids` trae los ids de las plantillas de ticket de venta
+> **Detalles de la implementación (Fase 3):** el **efectivo** puede exceder el total: el sobrante es
+> el cambio y el servidor solo guarda el importe que liquida la venta (`change = Σ pagos − cobrado`).
+> Cualquier otro método (`tarjeta`, `transferencia`, `saldo`) que en conjunto exceda el saldo
+> pendiente se **rechaza** con `422 payment_exceeds_pending` (la misma respuesta que el abono). `print.template_ids` trae los ids de las plantillas de ticket de venta
 > disponibles en la sucursal (contexto `pos`/`general`); a partir de la Fase 4 se usan en
 > `POST /print/bluetooth-payload` (ver §10).
 > Se valida además que la `cash_register_session_id` esté **abierta y sea de la sucursal**:
@@ -952,11 +956,17 @@ Reglas:
 - `method` aquí solo admite `efectivo` | `tarjeta` | `transferencia` (`saldo` se envía por `use_balance`).
 - `bank_account_id` obligatorio para `tarjeta` y `transferencia`.
 - Si la venta está `cancelado` o `reembolsado` → `422` (no admite pagos).
+- El abono **no puede exceder el saldo pendiente**, salvo en **efectivo**: ahí el sobrante es el cambio
+  y el servidor guarda solo el importe que liquida la venta. Con `tarjeta`/`transferencia` (o con
+  `use_balance`) que exceda → `422`
+  `{"code": "payment_exceeds_pending", "message": "El monto total del pago excede el saldo pendiente."}`
+  (la misma respuesta que `/pos/checkout`).
 
 Response `200`:
 ```json
 {
   "transaction": { "…": "venta actualizada con total_paid y remaining_due" },
+  "change": 0.0,
   "print": {
     "type": "abono",
     "payload": { "kind": "abono", "folio": "V-014", "abonado": "$350.00 MXN", "remainingDue": "$0.00 MXN", "liquidated": true },
@@ -1757,6 +1767,7 @@ Los siguientes `code` son códigos **de negocio** que devuelven los endpoints a 
 | `owner_only` | "No tienes permiso para acceder a esta sección." (solo propietario de la suscripción) | No |
 | `invalid_current_password` | "La contraseña actual no es correcta." | No |
 | `unsynced_operations` | "Tienes operaciones sin sincronizar. Sincronízalas antes de continuar." | Sí, tras sincronizar |
+| `payment_exceeds_pending` | "El monto total del pago excede el saldo pendiente." (solo `tarjeta`/`transferencia`/`saldo`; el efectivo devuelve `change`) | No: corregir el monto |
 
 ---
 
@@ -1853,6 +1864,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P0 de la app móvil (A2):** `remaining_due` (y por tanto `pending_balance` e `is_paid`) es **0** en las ventas anuladas (`cancelado` / `reembolsado`): antes una venta reembolsada seguía reportando saldo (`V-005 reembolsado … saldo=$138.00`). La regla se agregó en `Transaction::remainingDue()` (accesor compartido por web, app y reportes), así que no hay dos fórmulas distintas. Cobertura: caso nuevo en `TransactionApiTest` y el cierre del ciclo en `TransactionPaymentReversalApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A5):** una sola fórmula de totales para venta, apartado y pedido. El servidor **recalcula** `subtotal` desde el carrito (`TransactionPaymentService::cartTotals`: `subtotal = Σ((unit_price + discount) × quantity)`, `total = subtotal - total_discount` + envío) y ese es el importe que se cobra; antes `/pos/store-order` confiaba en el `subtotal` del cliente y el botón de pedido del POS web enviaba el precio **ya descontado**, así que un pedido de $300 con $30 de descuento se registraba en $240. Se corrigió también el POS web (`Index.vue` / `IndexMobile.vue`: el subtotal usa precios de lista y el total resta el descuento) y el ejemplo de §7 (`subtotal: 300`), más la nota de `line_total`/`discount_amount` por unidad. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A3):** el saldo a favor **solo** se aplica cuando el request lo pide (`use_balance: true`). `handleNewSale` forzaba el cobro del saldo del cliente cuando la venta quedaba con deuda (bloque «COBRO AUTOMÁTICO DE SALDO»), así que un apartado de $140 de un cliente con $1 a favor consumía ese peso sin que el request lo pidiera y sin reflejarlo el cajero. Ahora `use_balance` es opcional (`ausente` = `false`) y el saldo no gastado queda como deuda del cliente. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P0 de la app móvil (A4):** una sola regla de sobrepago entre `/pos/checkout` y `POST /transactions/{id}/payments`. Antes el abono respondía `422` «El monto total del pago excede el saldo pendiente.» (sin `code`) mientras la venta **recortaba en silencio** el pago al total, incluso con tarjeta. Ahora: el **efectivo** puede exceder (el sobrante es el cambio, se guarda solo lo que liquida y ambos endpoints devuelven `change`); `tarjeta`/`transferencia`/`saldo` que excedan responden `422` con el mismo `message` y `code: payment_exceeds_pending` en los dos. `applyPaymentToTransaction` devuelve el cambio. Cobertura: `PosApiTest` (tarjeta mayor al total) y `TransactionWriteApiTest` (abono mayor con tarjeta + cambio de un abono en efectivo). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

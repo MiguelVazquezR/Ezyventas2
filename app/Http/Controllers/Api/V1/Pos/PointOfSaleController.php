@@ -8,6 +8,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionStatus;
+use App\Exceptions\Pos\PaymentExceedsPendingBalanceException;
 use App\Http\Controllers\Api\V1\Concerns\ResolvesOpenCashRegisterSession;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Pos\CreateLayawayRequest;
@@ -104,29 +105,34 @@ class PointOfSaleController extends Controller
 
         try {
             $transaction = $this->payments->handleNewSale($request->saleData(), $user, $customer, $status, $debtType);
+        } catch (PaymentExceedsPendingBalanceException $exception) {
+            return response()->json([
+                'code' => PaymentExceedsPendingBalanceException::CODE,
+                'message' => $exception->getMessage(),
+            ], 422);
         } catch (\Exception $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
 
         return response()->json([
             'transaction' => $this->transactionPayload($transaction, $user),
-            'change' => $this->cashChange($request, $totals['total']),
+            'change' => $this->cashChange($request, $transaction),
             'print' => $this->printPayload($transaction, $user, 'pos'),
         ], 201);
     }
 
     /**
-     * Cash change to give back: only when the sale was paid in cash alone.
+     * Cash change to give back: the money the client offered that the sale did
+     * not keep (only cash may go over the pending balance).
      */
-    private function cashChange(RegisterSaleRequest $request, float $chargedTotal): float
+    private function cashChange(RegisterSaleRequest $request, Transaction $transaction): float
     {
-        $payments = collect($request->validated('payments') ?? []);
+        $offered = (float) collect($request->validated('payments') ?? [])->sum('amount');
+        $stored = (float) $transaction->payments()
+            ->where('payment_method', '!=', PaymentMethod::BALANCE->value)
+            ->sum('amount');
 
-        if ($payments->isEmpty() || $payments->contains(fn (array $payment) => $payment['method'] !== PaymentMethod::CASH->value)) {
-            return 0.0;
-        }
-
-        return max(0, round($payments->sum('amount') - $chargedTotal, 2));
+        return max(0, round($offered - $stored, 2));
     }
 
     /**

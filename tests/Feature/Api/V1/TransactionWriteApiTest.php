@@ -500,4 +500,56 @@ class TransactionWriteApiTest extends TestCase
             'payment_method' => 'efectivo',
         ])->assertStatus(401);
     }
+
+    /**
+     * An abono that is not cash cannot exceed the pending balance: the same
+     * answer as the sale endpoint (`code: payment_exceeds_pending`).
+     */
+    #[Test]
+    public function it_rejects_an_abono_bigger_than_the_pending_balance(): void
+    {
+        $transaction = $this->sale(['status' => TransactionStatus::PENDING], paid: 100);
+
+        $this->withToken($this->token)
+            ->postJson('/api/v1/transactions/' . $transaction->id . '/payments', [
+                'cash_register_session_id' => $this->cashRegisterSession->id,
+                'use_balance' => false,
+                'payments' => [
+                    ['amount' => 250, 'method' => 'tarjeta', 'bank_account_id' => $this->bankAccount->id],
+                ],
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'payment_exceeds_pending')
+            ->assertJsonPath('message', 'El monto total del pago excede el saldo pendiente.');
+
+        // Nothing was booked and the bank account was not touched.
+        $this->assertSame(0, $transaction->fresh()->payments()->where('amount', 250)->count());
+        $this->assertEquals(5000, (float) $this->bankAccount->fresh()->balance);
+    }
+
+    /**
+     * Cash is the exception of that rule: the extra money is the change handed
+     * back, so only what settles the sale is stored.
+     */
+    #[Test]
+    public function it_returns_the_change_of_a_cash_abono(): void
+    {
+        $transaction = $this->sale(['status' => TransactionStatus::PENDING], paid: 100);
+
+        $this->withToken($this->token)
+            ->postJson('/api/v1/transactions/' . $transaction->id . '/payments', [
+                'cash_register_session_id' => $this->cashRegisterSession->id,
+                'use_balance' => false,
+                'payments' => [['amount' => 250, 'method' => 'efectivo']],
+            ])
+            ->assertOk()
+            ->assertJsonPath('change', 50)
+            ->assertJsonPath('transaction.remaining_due', 0);
+
+        $this->assertDatabaseHas('payments', [
+            'transaction_id' => $transaction->id,
+            'amount' => 200,
+            'payment_method' => 'efectivo',
+        ]);
+    }
 }

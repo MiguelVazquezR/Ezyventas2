@@ -6,6 +6,7 @@ use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Exceptions\Pos\PaymentExceedsPendingBalanceException;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductAttribute;
@@ -81,8 +82,9 @@ class TransactionPaymentService
 
             // 4. Aplicar Pagos Directos
             $totalDue = $totalSale - $balanceToUse;
-            if (!empty($paymentsFromRequest)) {
-                $paymentsToProcess = $this->capPaymentsToAmount($paymentsFromRequest, $totalDue);
+            $paymentsToProcess = $this->paymentsWithinBalance($paymentsFromRequest, $totalDue)['payments'];
+
+            if (!empty($paymentsToProcess)) {
                 $this->applyDirectPayments($transaction, $paymentsToProcess, $sessionId);
             }
 
@@ -200,9 +202,15 @@ class TransactionPaymentService
         });
     }
 
-    public function applyPaymentToTransaction(Transaction $transaction, array $validatedData, int $sessionId): void
+    /**
+     * Registers an abono and returns the cash change to give back.
+     *
+     * @param  array<string, mixed>  $validatedData
+     * @return float  money offered by the client that the sale did not keep
+     */
+    public function applyPaymentToTransaction(Transaction $transaction, array $validatedData, int $sessionId): float
     {
-        DB::transaction(function () use ($transaction, $validatedData, $sessionId) {
+        return DB::transaction(function () use ($transaction, $validatedData, $sessionId) {
             $customer = $transaction->customer;
             $now = now();
             $remainingDue = $transaction->remaining_due;
@@ -212,20 +220,28 @@ class TransactionPaymentService
             if ($remainingDue <= 0.01) throw new Exception('Esta transacción ya está completamente pagada.');
 
             $balanceToUse = (!empty($validatedData['use_balance']) && $customer) ? min($customer->balance, $remainingDue) : 0;
-            $totalFromPayments = !empty($validatedData['payments']) ? array_sum(array_column($validatedData['payments'], 'amount')) : 0;
 
-            if (($balanceToUse + $totalFromPayments) > $remainingDue + 0.01) {
-                throw new Exception('El monto total del pago excede el saldo pendiente.');
-            }
+            // The same rule as a sale: cash may exceed the pending balance (the
+            // extra money is the change handed back) and any other method that
+            // exceeds it is rejected with `payment_exceeds_pending`.
+            $payment = $this->paymentsWithinBalance(
+                $validatedData['payments'] ?? [],
+                round($remainingDue - $balanceToUse, 2),
+            );
+
+            $paymentsToProcess = $payment['payments'];
 
             if ($balanceToUse > 0) {
                 $this->applyBalanceAsPayment($transaction, $customer, $balanceToUse, $sessionId, "Uso de saldo a favor en abono #{$transaction->folio}", clone $now);
             }
 
-            if ($totalFromPayments > 0) {
-                $this->applyDirectPayments($transaction, $validatedData['payments'], $sessionId);
+            if (!empty($paymentsToProcess)) {
+                $this->applyDirectPayments($transaction, $paymentsToProcess, $sessionId);
+
                 if ($customer) {
-                    $customer->payDebt($totalFromPayments, $transaction->id, "Abono a O.S. / Apartado #{$transaction->folio}", $now->copy()->addSecond());
+                    // Only the money that was really collected settles the debt.
+                    $collected = (float) array_sum(array_column($paymentsToProcess, 'amount'));
+                    $customer->payDebt($collected, $transaction->id, "Abono a O.S. / Apartado #{$transaction->folio}", $now->copy()->addSecond());
                 }
             }
 
@@ -236,6 +252,8 @@ class TransactionPaymentService
                     $this->finalizeTransactionStock($transaction, clone $now);
                 }
             }
+
+            return $payment['change'];
         });
     }
 
@@ -463,21 +481,53 @@ class TransactionPaymentService
             });
     }
 
-    private function capPaymentsToAmount(array $payments, float $maxAmount): array
+    /**
+     * Payments of a sale that fit in the pending balance.
+     *
+     * One single rule for a sale (checkout / layaway) and for an abono: cash may
+     * exceed the balance, because the extra money is the change handed back to
+     * the customer, so only the amount that settles the sale is stored. Card,
+     * transfer or balance that exceed it are rejected with the same answer in
+     * both endpoints (`payment_exceeds_pending`).
+     *
+     * @param  array<int, array<string, mixed>>  $payments
+     * @return array{payments: array<int, array<string, mixed>>, change: float}
+     */
+    public function paymentsWithinBalance(array $payments, float $pendingBalance): array
     {
-        $totalPaid = collect($payments)->sum('amount');
-        if ($totalPaid <= $maxAmount) return $payments;
+        if (empty($payments)) {
+            return ['payments' => [], 'change' => 0.0];
+        }
 
-        $cappedPayments = [];
-        $runningTotal = 0;
+        $offered = round((float) collect($payments)->sum('amount'), 2);
+
+        if ($offered <= $pendingBalance + 0.01) {
+            return ['payments' => $payments, 'change' => 0.0];
+        }
+
+        $cashOnly = collect($payments)->every(
+            fn (array $payment) => ($payment['method'] ?? null) === PaymentMethod::CASH->value
+        );
+
+        if (!$cashOnly) {
+            throw PaymentExceedsPendingBalanceException::make();
+        }
+
+        // Change: store only the money that settles the sale, line by line.
+        $capped = [];
+        $runningTotal = 0.0;
+
         foreach ($payments as $payment) {
-            $amountToCap = $maxAmount - $runningTotal;
-            if ($amountToCap <= 0) break;
+            $amountToRecord = round(min((float) $payment['amount'], $pendingBalance - $runningTotal), 2);
 
-            $amountToRecord = min((float) $payment['amount'], $amountToCap);
-            $cappedPayments[] = array_merge($payment, ['amount' => $amountToRecord]);
+            if ($amountToRecord <= 0.01) {
+                break;
+            }
+
+            $capped[] = array_merge($payment, ['amount' => $amountToRecord]);
             $runningTotal += $amountToRecord;
         }
-        return $cappedPayments;
+
+        return ['payments' => $capped, 'change' => round($offered - $pendingBalance, 2)];
     }
 }

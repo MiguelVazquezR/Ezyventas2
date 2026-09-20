@@ -448,4 +448,27 @@ class PosApiTest extends TestCase
 
         return Transaction::findOrFail($response->json('transaction.id'));
     }
+
+    /**
+     * A card payment bigger than the sale used to be silently cut down to the
+     * total; now it is rejected with the same answer as the abono endpoint.
+     */
+    #[Test]
+    public function it_rejects_a_card_payment_bigger_than_the_sale(): void
+    {
+        $this->withToken($this->token)
+            ->postJson('/api/v1/pos/checkout', $this->salePayload([
+                'payments' => [
+                    ['amount' => 400, 'method' => 'tarjeta', 'bank_account_id' => $this->bankAccount->id, 'notes' => null],
+                ],
+            ]))
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'payment_exceeds_pending')
+            ->assertJsonPath('message', 'El monto total del pago excede el saldo pendiente.');
+
+        // The sale was not created and the bank account was not touched.
+        $this->assertSame(0, Transaction::count());
+        $this->assertEquals(5000, (float) $this->bankAccount->fresh()->balance);
+        $this->assertEquals(20, $this->productStock()->current_stock);
+    }
 }
