@@ -24,7 +24,9 @@ class StoreServiceOrderRequest extends FormRequest
     {
         return [
             'customer_id' => ['nullable', 'integer', $this->customerOfSubscriptionRule()],
-            'create_customer' => ['required', 'boolean'],
+            // Optional: absent means "do not create a customer" (the app sends
+            // it always; a curl without it must work too).
+            'create_customer' => ['sometimes', 'boolean'],
             'credit_limit' => ['required_if:create_customer,true', 'nullable', 'numeric', 'min:0'],
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_email' => ['nullable', 'email', 'max:255'],

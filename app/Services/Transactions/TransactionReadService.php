@@ -143,6 +143,9 @@ class TransactionReadService
     public function detailPayload(Transaction $transaction): array
     {
         return array_merge($this->listPayload($transaction), [
+            // The web (`TransactionCancellationModal.vue`) decides whether a
+            // refund can go to the customer balance with this field.
+            'customer_id' => $transaction->customer_id,
             'branch' => $transaction->branch ? [
                 'id' => $transaction->branch->id,
                 'name' => $transaction->branch->name,

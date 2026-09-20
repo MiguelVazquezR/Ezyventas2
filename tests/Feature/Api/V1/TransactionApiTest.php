@@ -181,6 +181,8 @@ class TransactionApiTest extends TestCase
             ->assertJsonPath('id', $transaction->id)
             ->assertJsonPath('folio', 'V-014')
             ->assertJsonPath('branch.id', $this->branch->id)
+            // The web decides with `customer_id`: it travels in the root too.
+            ->assertJsonPath('customer_id', $this->customer->id)
             ->assertJsonPath('customer.name', 'Ana Ramírez')
             ->assertJsonPath('paid_amount', 100)
             ->assertJsonPath('pending_balance', 170)

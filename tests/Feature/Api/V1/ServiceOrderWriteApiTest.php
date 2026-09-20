@@ -419,4 +419,24 @@ class ServiceOrderWriteApiTest extends TestCase
 
         return ServiceOrder::latest('id')->first();
     }
+
+    /**
+     * `create_customer` decides whether the customer is created on the fly;
+     * sending an existing customer without that flag must work (the example of
+     * the contract does exactly that; hallazgo 11).
+     */
+    #[Test]
+    public function it_creates_an_order_without_sending_create_customer(): void
+    {
+        $payload = $this->orderPayload();
+        unset($payload['create_customer']);
+
+        $response = $this->withToken($this->token)->post('/api/v1/service-orders', $payload);
+
+        $response->assertCreated()
+            ->assertJsonPath('service_order.customer.id', $this->customer->id);
+
+        // The customer of the order is the one sent: no extra customer is created.
+        $this->assertEquals(1, $this->customer->fresh()->branch->customers()->count());
+    }
 }

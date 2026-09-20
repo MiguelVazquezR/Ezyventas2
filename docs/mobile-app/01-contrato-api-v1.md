@@ -413,12 +413,14 @@ Permiso: `pos.access`. Reutiliza la lógica de apertura, extraída a
 > `422 session_already_open` "Ya tienes una sesión de caja activa.";
 > `422 no_cash_register_available` si la terminal está desactivada;
 > `404` si la caja no existe o es de otra sucursal.
+>
+> **`user_id` no viaja:** el servidor abre la sesión con el **usuario del token**; enviarlo no cambia
+> nada (el request ni lo acepta). Igual que `branch_id`/`subscription_id`, se deriva del token.
 
 ```json
 {
   "client_uuid": "7d4b1c2a-9f31-4a77-b6ce-0f1e2d3c4b5a",
   "cash_register_id": 5,
-  "user_id": 7,
   "opening_cash_balance": 1500,
   "bank_accounts": [
     { "id": 2, "balance": 5000 },
@@ -988,6 +990,12 @@ aplica el nuevo).
 Response `200`: `{ "message": "Pago actualizado correctamente.", "payment": { … }, "transaction": { … } }`.
 Lógica en `TransactionPaymentEditService` (compartida con la web).
 
+> **Métodos aceptados:** la API acepta los **cinco** de `PaymentMethod` (`efectivo`, `tarjeta`,
+> `transferencia`, `saldo`, `intercambio`), mientras que `EditPaymentModal.vue` (web) solo ofrece
+> cuatro (sin `intercambio`). No es un error: la app ofrece los cuatro de la web **más** el método
+> actual cuando es `intercambio`, para no perderlo al guardar. Si algún día se alinean, hay que tocar
+> el modal de la web, no este endpoint.
+
 ### `DELETE /transactions/{id}/payments/{paymentId}` — ✅ implementado (Fase 4)
 Permiso: `transactions.edit_payment`. Elimina el pago y revierte **todos** sus efectos: el saldo
 bancario, el saldo del cliente y el movimiento de caja del turno. Response `204`.
@@ -1158,7 +1166,7 @@ los clientes de la suscripción).
 | Campo | Regla |
 |---|---|
 | `customer_id` | nullable, debe existir |
-| `create_customer` | **required boolean** (true = dar de alta al cliente al vuelo) |
+| `create_customer` | **opcional booleano** (true = dar de alta al cliente al vuelo; ausente = false) |
 | `credit_limit` | required si `create_customer = true`, numérico ≥ 0 |
 | `customer_name` | required, máx. 255 |
 | `customer_email` | nullable, email |
@@ -1166,7 +1174,7 @@ los clientes de la suscripción).
 | `customer_address` | nullable `{street, city}` |
 | `item_description` | required, máx. 255 |
 | `reported_problems` | required, texto |
-| `promised_at` | nullable, fecha |
+| `promised_at` | nullable, fecha (`YYYY-MM-DD`) |
 | `assign_technician` | **required boolean** |
 | `technician_name` | required si `assign_technician = true` |
 | `technician_commission_type` | required si `assign_technician = true`: `percentage` o `fixed` |
@@ -1186,6 +1194,14 @@ los clientes de la suscripción).
 | `initial_evidence_images[]` | nullable, máx. 5, `image`, ≤ 2048 KB |
 | `cash_register_session_id` | **required**, debe existir con `status = abierta` |
 | `client_uuid` | requerido por la app para idempotencia |
+
+> **`promised_at` viaja como fecha sin hora** (`YYYY-MM-DD`): la app la envía a medianoche **local**
+> (`America/Mexico_City`) de la fecha que eligió el usuario. Si se manda una hora, la zona del servidor
+> puede correr la fecha mostrada un día.
+>
+> **Booleanos en `multipart/form-data`:** Laravel no acepta la cadena `"true"` en un campo de
+> formulario, así que viajan como `1`/`0` (`-F "create_customer=false"` o `-F create_customer=0`). En
+> JSON se envían como booleanos normales.
 
 Ejemplo `curl` (multipart):
 ```bash
@@ -1703,6 +1719,10 @@ Notas:
 ### 11b.4 Perfil de usuario — ✅ implementado (Fase 4)
 Tres pestañas: **Información personal**, **Seguridad** y **Sesiones activas**. Permiso: sesión válida.
 La foto se guarda con `HasProfilePhoto` (Jetstream) y `has_photo` indica si existe.
+**`has_photo` es el campo que decide**: cuando es `false`, `profile_photo_url` puede traer un
+**placeholder** de `ui-avatars.com` (el accesor de Jetstream), no una foto del negocio — que en el
+teléfono queda como una imagen rota al no resolver ese host. Por eso la app solo pinta
+`profile_photo_url` si `has_photo` es `true` (y si no, sus iniciales).
 Errores con `code`: `invalid_current_password` (contraseña actual incorrecta) en el cambio de
 contraseña y en «cerrar otras sesiones»; al cambiar el correo se envía el código OTP y
 `email_verified_at` vuelve a `null` (`email_verification_sent: true`).
@@ -1721,7 +1741,10 @@ contraseña y en «cerrar otras sesiones»; al cambiar el correo se envía el c�
 }
 ```
 
-`PUT /profile` (multipart/form-data)
+`PUT /profile` (multipart/form-data **o** JSON cuando no se envía foto)
+> La API acepta también `application/json` para esta ruta: se usa multipart **solo** cuando se manda
+> `photo`. El resto de los campos y el `message` de la respuesta son idénticos.
+
 | Campo | Regla |
 |---|---|
 | `name` | required, string, máx. 255 |
@@ -1768,7 +1791,7 @@ muestra esta opción cuando `is_subscription_owner = true`. Implementado en
     "id": 15,
     "commercial_name": "Refaccionaria López",
     "business_name": "López Servicios S.A. de C.V.",
-    "status": "activa",
+    "status": "activo",
     "tax_id": "LOMM850101HDF",
     "contact_phone": "4771234567",
     "contact_email": "contacto@negocio.com",
@@ -1822,7 +1845,11 @@ refrescar `GET /subscription`. Se documentará un flujo nativo (WebView con reto
 
 Reglas para la app:
 - Ocultar la opción "Suscripción" del menú si `is_subscription_owner = false`.
-- Mostrar el estado con color: `activa` (verde), por vencer (ámbar), `expirada`/`suspendida` (rojo).
+- Mostrar el estado con color: `activo` (verde), por vencer (ámbar), `expirado`/`suspendido` (rojo).
+- El valor real del enum (`App\Enums\SubscriptionStatus`) es **masculino**: `activo` | `expirado` |
+  `suspendido`. Los textos femeninos («activa», «expirada») **no** existen: para lo que se muestra al
+  usuario hay que usar `status_data.label` (que ya viene en español y con la forma correcta) y para
+  decidir, `is_expired` / `days_left`.
 - Los datos de uso/plan son **solo lectura**; los límites no se pueden exceder desde la app.
 
 ---
@@ -1866,7 +1893,7 @@ Los siguientes `code` son códigos **de negocio** que devuelven los endpoints a 
 | `permission_denied` | "Tu usuario no tiene permiso para esta acción." | No |
 | `branch_out_of_scope` | "El recurso no pertenece a tu sucursal." | No |
 | `not_session_participant` | "No participas en esta sesión de caja." | No |
-| `owner_only` | "No tienes permiso para acceder a esta sección." (solo propietario de la suscripción) | No |
+| `owner_only` | "No tienes permiso para acceder a esta sección." (solo propietario de la suscripción) — **hoy no se emite**: `SubscriptionRequest::authorize` devuelve `false` y la respuesta es el `403` genérico «Tu usuario no tiene permiso para esta acción.»; para distinguir «no contratado» de «sin permiso», usar `is_subscription_owner` de `GET /auth/me` | No |
 | `invalid_current_password` | "La contraseña actual no es correcta." | No |
 | `unsynced_operations` | "Tienes operaciones sin sincronizar. Sincronízalas antes de continuar." | Sí, tras sincronizar |
 | `payment_exceeds_pending` | "El monto total del pago excede el saldo pendiente." (solo `tarjeta`/`transferencia`/`saldo`; el efectivo devuelve `change`) | No: corregir el monto |
@@ -1976,6 +2003,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P1 de la app móvil (D1):** `GET /subscription` incluye `history[].payment.id`, el id que exige `POST /subscription/payments/{paymentId}/request-invoice`. Sin él la app no podía solicitar la factura de un pago desde el teléfono (`[live] … puedeFactura=true idPago=null`, hallazgo 24). Cobertura: caso nuevo en `AccountApiTest` que además usa ese id contra el endpoint de factura. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (D5):** nuevo `GET /service-orders/custom-fields` (`services.orders.access`) que devuelve las definiciones de campos personalizados del módulo (`module = service_orders`, misma forma que `custom_field_definitions` del detalle). Antes solo viajaban en `GET /service-orders/{id}`, así que la app podía capturarlos al **editar** pero no al **crear** (hallazgo 14); el constructor de definiciones de `ServiceOrderReadService` se hizo reutilizable. Cobertura: dos casos nuevos en `ServiceOrderApiTest` (lista filtrada por módulo y suscripción + permiso requerido). | 4 ✅ |
 | 2026-09-20 | **Correcciones P2 de la app móvil (B6):** la etiqueta ya no sale con el código de barras vacío (`BARCODE …,2,2,""`, el caso real de la plantilla de prueba; hallazgo 19). Si el valor del `barcode` se resuelve a cadena vacía, el servidor rellena con el identificador del documento (`products.sku`, o `P-<id>`; `folio` de la venta/orden; `C-<id>` de un cliente) y lo declara en el campo nuevo `warnings` de `/print/payload`. La misma reserva se aplica al `barcode` de un ticket ESC/POS. Cobertura: dos casos nuevos en `PrintingApiTest` (relleno + aviso y valor real sin aviso). | 4 ✅ |
+| 2026-09-20 | **Contrato vs realidad (C1-C8 + `PUT /profile` de la sección E):** C1 `POST /cash-register-sessions` ya no lista `user_id` (el servidor usa el del token y el request no lo acepta); C2 el estatus de la suscripción es `activo`/`expirado`/`suspendido` (masculino, valores reales del enum) y se documenta que para mostrarlo se usa `status_data.label`; C3 `create_customer` pasa a **opcional** (`sometimes boolean`; ausente = false) y se documenta que en multipart los booleanos viajan `1`/`0`; C4 se documenta que `profile_photo_url` puede ser un placeholder de ui-avatars y que **`has_photo` es el campo que decide**; C5 `GET /transactions/{id}` expone `customer_id` en la raíz (lo usa `TransactionCancellationModal.vue` en la web); C6 se documenta que editar un pago acepta los 5 métodos mientras la web ofrece 4; C7 se documenta `promised_at` como `YYYY-MM-DD` local; C8 se documenta que `owner_only` **hoy no se emite** (el 403 de suscripción es el genérico). Además, `PUT /profile` acepta JSON además de multipart. Cobertura: casos nuevos en `ServiceOrderWriteApiTest` (alta sin `create_customer`) y `TransactionApiTest` (`customer_id` en el detalle). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se
