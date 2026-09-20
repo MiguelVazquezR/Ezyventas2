@@ -511,4 +511,57 @@ class PrintingApiTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', 'Este documento no tiene ticket de WhatsApp.');
     }
+
+    /**
+     * The web asks for several contexts at once (`pos` + `general`): the app may
+     * send them as an array or as a comma separated list (hallazgo 17).
+     */
+    #[Test]
+    public function it_accepts_several_contexts_at_once(): void
+    {
+        $general = PrintTemplate::factory()->create([
+            'subscription_id' => $this->subscription->id,
+            'name' => 'Ticket general',
+            'type' => TemplateType::SALE_TICKET,
+            'context_type' => TemplateContextType::GENERAL->value,
+        ]);
+
+        PrintTemplate::factory()->create([
+            'subscription_id' => $this->subscription->id,
+            'name' => 'Recibo de servicio',
+            'type' => TemplateType::SALE_TICKET,
+            'context_type' => TemplateContextType::SERVICE_ORDER->value,
+        ]);
+
+        // Array form: the app's first choice.
+        $this->withToken($this->token)
+            ->getJson('/api/v1/print/templates?context[]=pos&context[]=general')
+            ->assertOk()
+            ->assertJsonCount(2)
+            ->assertJsonPath('1.id', $general->id);
+
+        // Comma separated form.
+        $this->withToken($this->token)
+            ->getJson('/api/v1/print/templates?context=pos,general')
+            ->assertOk()
+            ->assertJsonCount(2);
+
+        // A single context and `type` keep behaving exactly as before.
+        $this->withToken($this->token)
+            ->getJson('/api/v1/print/templates?context=pos')
+            ->assertOk()
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.id', $this->template->id);
+
+        $this->withToken($this->token)
+            ->getJson('/api/v1/print/templates?type=ticket_venta')
+            ->assertOk()
+            ->assertJsonCount(3);
+
+        // An unknown context is still rejected.
+        $this->withToken($this->token)
+            ->getJson('/api/v1/print/templates?context=pos,volando')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['context.1' => 'El contexto de impresión no es válido.']);
+    }
 }

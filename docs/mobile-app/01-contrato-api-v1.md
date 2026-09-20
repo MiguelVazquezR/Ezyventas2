@@ -1281,6 +1281,18 @@ Query: `context` (`pos` | `transaction` | `service_order` | `product` | `custome
 Permiso: sesión válida con acceso operativo (`pos.access` **o** `transactions.access` **o**
 `services.orders.access`). Solo se listan las plantillas de la **suscripción** del usuario.
 
+`context` acepta **varios a la vez**, porque la web siempre pide un conjunto (el POS `pos` + `general`,
+el detalle de la venta `transaction` + `general`, etc.):
+
+```bash
+GET /api/v1/print/templates?context[]=pos&context[]=general     # forma recomendada
+GET /api/v1/print/templates?context=pos,general                 # lista separada por comas
+GET /api/v1/print/templates?context=pos                          # un solo contexto (igual que antes)
+GET /api/v1/print/templates?type=ticket_venta                    # solo por tipo (igual que antes)
+```
+Un contexto desconocido responde `422` con `errors.context.N` =
+"El contexto de impresión no es válido.".
+
 ```json
 [
   {
@@ -1919,6 +1931,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P0 de la app móvil (A6):** borrar una orden de servicio revierte sus efectos. `DeleteServiceOrderAction` solo borraba la orden y su venta, dejando el stock consumido y la deuda del cliente intactos (hallazgo 13); ahora devuelve el stock de las refacciones (`restoreStock`) y cancela la deuda generada por el alta (`cancelDebt` → `credito_por_cancelacion`), la misma reversión que al cancelar la O.S. El borrado masivo de la web pasa por la misma acción (antes hacía un `delete` masivo crudo). Los abonos ya cobrados no se reembolsan. Cobertura: caso nuevo en `ServiceOrderWriteApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B1):** el logo de la plantilla viaja dentro del payload ESC/POS. `POST /print/bluetooth-payload` devolvía solo texto (los elementos `image`/`local_image` se ignoraban en `buildEscPosRawText`), así que el ticket salía sin logo aunque el respaldo HTML sí lo incluyera (hallazgo 35). Nuevo `App\Services\Printing\EscPosImageRasterizer`: descarga la imagen en el servidor, la escala al ancho del papel (384/576 puntos), la centra y la convierte a mono 1 bit dentro de un comando `GS v 0` en la posición de la plantilla. Si la imagen no se puede leer, el ticket se genera sin logo y se registra un aviso. El camino del plugin de escritorio (`/print/payload`) no cambia. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B3):** `POST /print/whatsapp-ticket` arma el ticket de una **orden de servicio**. Antes resolvía el origen con `PrintDataSourceResolver` y, si no era una `Transaction`, respondía `200` con `ticket: null` (`customer_phone: null`), así que la app creía que había enviado algo cuando no tenía nada que mandar (hallazgo 16: `[live] WhatsApp service_order=3 ticket=null`). Nuevo `WhatsAppTicketService::buildServiceOrderPayload()` (`kind: service_order`: folio, estatus, equipo, refacciones, anticipos, saldo y fecha prometida) y, para un origen que no puede producir ticket (`product`, `customer`), `422` con `code: no_whatsapp_ticket` en vez de un `null` silencioso. El `kind` documenta que depende del documento resuelto. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (B4):** `GET /print/templates` acepta **varios contextos** a la vez (`?context[]=pos&context[]=general` o `?context=pos,general`), que es lo que necesita la web (pide `pos`+`general`, `transaction`+`general`, …). Antes aceptaba uno solo, así que `?context=pos` devolvía la lista vacía con suscripciones cuyas plantillas de ticket son `general`. Un solo contexto y `?type=` siguen comportándose igual; un contexto desconocido responde `422` con `errors.context.N`. Cobertura: caso nuevo en `PrintingApiTest` (array, coma, un solo contexto, `type` y contexto inválido). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

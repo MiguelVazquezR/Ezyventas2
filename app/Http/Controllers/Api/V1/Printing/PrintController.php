@@ -36,8 +36,10 @@ class PrintController extends Controller
     {
         $query = PrintTemplate::where('subscription_id', $request->user()->branch?->subscription_id);
 
-        if ($context = $request->validated('context')) {
-            $query->where('context_type', $context);
+        // One or several contexts: the caller may ask for the whole set the web
+        // uses (the POS needs `pos` + `general`).
+        if ($contexts = $request->contexts()) {
+            $query->whereIn('context_type', $contexts);
         }
 
         if ($type = $request->validated('type')) {
