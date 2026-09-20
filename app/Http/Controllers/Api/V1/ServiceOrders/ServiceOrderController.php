@@ -207,7 +207,7 @@ class ServiceOrderController extends Controller
     {
         $serviceOrder = $this->findOrFail($serviceOrderId, (int) $request->user()->branch_id);
 
-        $action->execute($serviceOrder);
+        $action->execute($serviceOrder, $request->user());
 
         return response()->noContent();
     }

@@ -1258,9 +1258,14 @@ abono. Es el flujo de **anticipos** de una orden. Requiere sesión de caja abier
 Response `200`: `{ "service_order": { … }, "transaction": { … }, "print": { "type": "abono", … } }`
 
 ### `DELETE /service-orders/{id}` — ✅ implementado (Fase 4)
-Permiso: `services.orders.delete`. Elimina la orden **y su venta vinculada**.
+Permiso: `services.orders.delete`. Elimina la orden **y su venta vinculada** revirtiendo lo que el
+alta provocó: el stock de las refacciones vuelve a la sucursal y se cancela la deuda que la orden
+cargó al cliente (movimiento `credito_por_cancelacion`), la misma reversión que al cancelar la O.S.
+Lo ya cobrado en abonos/anticipos **no** se reembolsa aquí (para devolver dinero se reembolsa la
+venta vinculada).
 Response `204`. La app debe pedir confirmación explícita
-("Esta acción no se puede deshacer."). Lógica en `DeleteServiceOrderAction` (la web usa la misma).
+("Esta acción no se puede deshacer."). Lógica en `DeleteServiceOrderAction` (la web usa la misma acción,
+también en el borrado masivo).
 
 ---
 
@@ -1865,6 +1870,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P0 de la app móvil (A5):** una sola fórmula de totales para venta, apartado y pedido. El servidor **recalcula** `subtotal` desde el carrito (`TransactionPaymentService::cartTotals`: `subtotal = Σ((unit_price + discount) × quantity)`, `total = subtotal - total_discount` + envío) y ese es el importe que se cobra; antes `/pos/store-order` confiaba en el `subtotal` del cliente y el botón de pedido del POS web enviaba el precio **ya descontado**, así que un pedido de $300 con $30 de descuento se registraba en $240. Se corrigió también el POS web (`Index.vue` / `IndexMobile.vue`: el subtotal usa precios de lista y el total resta el descuento) y el ejemplo de §7 (`subtotal: 300`), más la nota de `line_total`/`discount_amount` por unidad. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A3):** el saldo a favor **solo** se aplica cuando el request lo pide (`use_balance: true`). `handleNewSale` forzaba el cobro del saldo del cliente cuando la venta quedaba con deuda (bloque «COBRO AUTOMÁTICO DE SALDO»), así que un apartado de $140 de un cliente con $1 a favor consumía ese peso sin que el request lo pidiera y sin reflejarlo el cajero. Ahora `use_balance` es opcional (`ausente` = `false`) y el saldo no gastado queda como deuda del cliente. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A4):** una sola regla de sobrepago entre `/pos/checkout` y `POST /transactions/{id}/payments`. Antes el abono respondía `422` «El monto total del pago excede el saldo pendiente.» (sin `code`) mientras la venta **recortaba en silencio** el pago al total, incluso con tarjeta. Ahora: el **efectivo** puede exceder (el sobrante es el cambio, se guarda solo lo que liquida y ambos endpoints devuelven `change`); `tarjeta`/`transferencia`/`saldo` que excedan responden `422` con el mismo `message` y `code: payment_exceeds_pending` en los dos. `applyPaymentToTransaction` devuelve el cambio. Cobertura: `PosApiTest` (tarjeta mayor al total) y `TransactionWriteApiTest` (abono mayor con tarjeta + cambio de un abono en efectivo). | 4 ✅ |
+| 2026-09-20 | **Correcciones P0 de la app móvil (A6):** borrar una orden de servicio revierte sus efectos. `DeleteServiceOrderAction` solo borraba la orden y su venta, dejando el stock consumido y la deuda del cliente intactos (hallazgo 13); ahora devuelve el stock de las refacciones (`restoreStock`) y cancela la deuda generada por el alta (`cancelDebt` → `credito_por_cancelacion`), la misma reversión que al cancelar la O.S. El borrado masivo de la web pasa por la misma acción (antes hacía un `delete` masivo crudo). Los abonos ya cobrados no se reembolsan. Cobertura: caso nuevo en `ServiceOrderWriteApiTest`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

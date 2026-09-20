@@ -227,25 +227,26 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', $result['message']);
     }
 
-    public function destroy(ServiceOrder $serviceOrder, DeleteServiceOrderAction $action)
+    public function destroy(Request $request, ServiceOrder $serviceOrder, DeleteServiceOrderAction $action)
     {
-        $action->execute($serviceOrder);
+        $action->execute($serviceOrder, $request->user());
 
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio eliminada.');
     }
 
-    public function batchDestroy(Request $request)
+    /**
+     * Bulk delete: every order goes through the same action, so the stock and
+     * the balance of the customer are reverted one by one (not with a raw
+     * mass delete that left both wrong).
+     */
+    public function batchDestroy(Request $request, DeleteServiceOrderAction $action)
     {
-        $request->validate(['ids' => 'required|array']);
-        
-        DB::transaction(function () use ($request) {
-            Transaction::whereHasMorph('transactionable', [ServiceOrder::class], function ($query) use ($request) {
-                $query->whereIn('id', $request->input('ids'));
-            })->delete();
-            
-            ServiceOrder::whereIn('id', $request->input('ids'))->delete();
-        });
-        
+        $validated = $request->validate(['ids' => 'required|array']);
+
+        ServiceOrder::whereIn('id', $validated['ids'])
+            ->get()
+            ->each(fn (ServiceOrder $serviceOrder) => $action->execute($serviceOrder, $request->user()));
+
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
     }
 

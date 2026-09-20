@@ -348,6 +348,33 @@ class ServiceOrderWriteApiTest extends TestCase
         $this->assertDatabaseMissing('transactions', ['id' => $transactionId]);
     }
 
+    /**
+     * Deleting an order undoes what creating it caused: the part goes back to
+     * the shelf and the customer stops owing the money (hallazgo 13).
+     */
+    #[Test]
+    public function it_reverts_the_stock_and_the_customer_debt_when_deleting_an_order(): void
+    {
+        $serviceOrder = $this->createOrder();
+
+        // Creating the order took the part out of stock and charged the customer.
+        $this->assertEquals(19, (int) $this->productStock()->current_stock);
+        $this->assertEquals(-150, (float) $this->customer->fresh()->balance);
+
+        $this->withToken($this->token)
+            ->deleteJson('/api/v1/service-orders/' . $serviceOrder->id)
+            ->assertNoContent();
+
+        // Both are exactly as they were before the order.
+        $this->assertEquals(20, (int) $this->productStock()->current_stock);
+        $this->assertEquals(0, (float) $this->customer->fresh()->balance);
+        $this->assertDatabaseHas('customer_balance_movements', [
+            'customer_id' => $this->customer->id,
+            'type' => 'credito_por_cancelacion',
+            'amount' => 150,
+        ]);
+    }
+
     #[Test]
     public function it_requires_the_delete_permission(): void
     {
