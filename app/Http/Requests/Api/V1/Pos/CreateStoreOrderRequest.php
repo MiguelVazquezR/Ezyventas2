@@ -71,6 +71,9 @@ class CreateStoreOrderRequest extends FormRequest
     /**
      * Data the payment service expects (same keys as the web request).
      *
+     * `subtotal` is not forwarded on purpose: the server recalculates it from
+     * the cart (`TransactionPaymentService::cartTotals`).
+     *
      * @return array<string, mixed>
      */
     public function orderData(): array
@@ -83,7 +86,6 @@ class CreateStoreOrderRequest extends FormRequest
             'delivery_date' => $this->validated('delivery_date'),
             'shipping_address' => $this->validated('shipping_address'),
             'shipping_cost' => $this->validated('shipping_cost') ?? 0,
-            'subtotal' => $this->validated('subtotal'),
             'total_discount' => $this->validated('total_discount') ?? 0,
             'notes' => $this->validated('notes'),
         ];

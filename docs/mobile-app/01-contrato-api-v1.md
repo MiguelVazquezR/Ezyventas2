@@ -658,7 +658,7 @@ Request:
       "discount_reason": "Promoción de producto"
     }
   ],
-  "subtotal": 270,
+  "subtotal": 300,
   "total_discount": 30,
   "total": 270,
   "payments": [
@@ -671,10 +671,17 @@ Request:
 
 Reglas del payload:
 - `cartItems[].id` = `products.id`; `product_attribute_id` = `variant_combinations[].id` (o null).
-- `discount` es **por unidad**: `original_price - unit_price` (nunca negativo; si el precio subió
-  manualmente, usar `discount: 0` y `discount_reason: "Aumento manual"`).
-- `subtotal` = Σ(`unit_price` × `quantity`); `total_discount` = Σ(`discount` × `quantity`);
-  `total` = `subtotal - total_discount` (+ `shipping_cost` si es pedido).
+- `discount` es **por unidad**: `original_price - unit_price` (si el precio subió manualmente se envía
+  **negativo** con `discount_reason: "Aumento manual"`).
+- **Totales (una sola regla para venta, apartado y pedido):**
+  `subtotal = Σ((unit_price + discount) × quantity)` = Σ(precio de lista × cantidad);
+  `total_discount` = Σ(`discount` × `quantity`) más los descuentos que se apliquen a **todo** el
+  carrito; `total = subtotal - total_discount` (+ `shipping_cost` si es pedido).
+- El **servidor recalcula** `subtotal` a partir de `cartItems` y deriva `total`; `total_discount` se
+  respeta tal cual llega porque puede incluir descuentos de todo el carrito. Los campos `subtotal` y
+  `total` del request son informativos: el importe que se cobra es el que calcula el servidor
+  (`TransactionPaymentService::cartTotals`), con la misma fórmula que el POS web (`ShoppingCart.vue`),
+  de modo que los tres botones cobran lo mismo.
 - `payments[].method` ∈ `efectivo` | `tarjeta` | `transferencia` | `saldo`;
   `bank_account_id` **obligatorio** para `tarjeta` y `transferencia`.
 - `use_balance: true` solo si hay cliente con saldo a favor; el servidor limita el uso al total.
@@ -687,7 +694,7 @@ Response `201`:
     "folio": "V-014",
     "status": "completado",
     "channel": "punto_de_venta",
-    "subtotal": "270.00",
+    "subtotal": "300.00",
     "total_discount": "30.00",
     "total_tax": "0.00",
     "shipping_cost": "0.00",
@@ -697,7 +704,7 @@ Response `201`:
     "created_at": "2026-09-18T14:35:00.000000Z",
     "customer": { "id": 8, "name": "Ana Ramírez" },
     "items": [
-      { "id": 5510, "description": "Filtro de aceite", "quantity": 2, "unit_price": "135.00", "discount_amount": "15.00", "line_total": "240.00" }
+      { "id": 5510, "description": "Filtro de aceite", "quantity": 2, "unit_price": "135.00", "discount_amount": "15.00", "line_total": "270.00" }
     ],
     "payments": [
       { "id": 3312, "amount": "270.00", "payment_method": "efectivo", "status": "completado", "payment_date": "2026-09-18T14:35:00.000000Z" }
@@ -726,6 +733,10 @@ Errores esperados:
 > si no, `422 session_required`. El `customerId` debe ser de la **sucursal**; y si la venta deja
 > saldo, se responde `422 customer_required` (sin cliente) o `422 credit_limit_exceeded`
 > (sin crédito) **antes** de tocar la base de datos.
+>
+> En `items[]`, `unit_price` es el precio **cobrado** por unidad y `line_total = quantity × unit_price`
+> (neto de esa línea); `discount_amount` guarda el descuento **por unidad** tal como lo envía el
+> carrito (`unit_price + discount` = precio de lista de la línea).
 
 ### `POST /pos/layaway` — ✅ implementado (Fase 3)
 Mismo payload que `checkout` + `layaway_expiration_date` **obligatoria** y posterior a hoy
@@ -1837,6 +1848,7 @@ php artisan route:list --path=api
 | 2026-09-18 | **Fase 4 implementada (corte de caja, impresión, edición de pagos y cuenta):** `GET /cash-register-sessions/{id}/summary`, `PUT /cash-register-sessions/{id}` (corte), `POST .../leave`, `POST /cash-register-sessions/rejoin-or-start`, `GET /print/templates`, `POST /print/bluetooth-payload`, `POST /print/payload`, `POST /print/ticket-html`, `POST /print/whatsapp-ticket`, `PUT|DELETE /transactions/{id}/payments/{paymentId}`, `DELETE /service-orders/{id}`, `PUT /branch/switch/{branch}`, `GET /notifications`, `GET /support`, `GET|PUT /profile`, `DELETE /profile/photo`, `PUT /profile/password`, `POST /profile/logout-other-devices`, `GET|PUT /subscription`, `POST /subscription/documents` y `POST /subscription/payments/{id}/request-invoice`. Piezas compartidas nuevas (las usa también la web): `CashRegisterSessionLifecycleService` (antes `…OpenService`: open/join/leave/rejoinOrStart/close + broadcast `SessionClosed`), `TransactionPaymentEditService`, `DeleteServiceOrderAction`, `PrintDataSourceResolver`, `WhatsAppTicketService::buildSalePayload()` y `config/support.php`. `GET /auth/me` ahora incluye `available_branches`. Correcciones: la edición de un pago ya no descuadra la cuenta bancaria al cambiar de método, y al quitar un pago la venta vuelve a `apartado` (no a `pendiente`) si tenía fecha límite. Códigos nuevos: `not_session_participant`, `branch_out_of_scope`, `invalid_current_password`, `payment_not_approved`. Cobertura: `CashRegisterCloseApiTest` (11), `PrintingApiTest` (9), `AccountApiTest` (12) y los casos añadidos a `TransactionWriteApiTest` y `ServiceOrderWriteApiTest` (132 tests verdes en la carpeta de la API). | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A1):** editar (`PUT`) o borrar (`DELETE`) un pago vuelve a conciliar `customers.balance`: revierte el movimiento simétrico que el pago escribió al crearse (`payDebt` ↔ `addDebt`, `useBalance` ↔ `addRefund`) y, en la edición, aplica el del nuevo monto/método. La cadena apartado → abono → edición → borrado → cancelación con reembolso en efectivo deja el saldo del cliente en `0.00` (antes quedaba el importe del pago borrado a favor). Cobertura: `tests/Feature/Api/V1/TransactionPaymentReversalApiTest.php`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A2):** `remaining_due` (y por tanto `pending_balance` e `is_paid`) es **0** en las ventas anuladas (`cancelado` / `reembolsado`): antes una venta reembolsada seguía reportando saldo (`V-005 reembolsado … saldo=$138.00`). La regla se agregó en `Transaction::remainingDue()` (accesor compartido por web, app y reportes), así que no hay dos fórmulas distintas. Cobertura: caso nuevo en `TransactionApiTest` y el cierre del ciclo en `TransactionPaymentReversalApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P0 de la app móvil (A5):** una sola fórmula de totales para venta, apartado y pedido. El servidor **recalcula** `subtotal` desde el carrito (`TransactionPaymentService::cartTotals`: `subtotal = Σ((unit_price + discount) × quantity)`, `total = subtotal - total_discount` + envío) y ese es el importe que se cobra; antes `/pos/store-order` confiaba en el `subtotal` del cliente y el botón de pedido del POS web enviaba el precio **ya descontado**, así que un pedido de $300 con $30 de descuento se registraba en $240. Se corrigió también el POS web (`Index.vue` / `IndexMobile.vue`: el subtotal usa precios de lista y el total resta el descuento) y el ejemplo de §7 (`subtotal: 300`), más la nota de `line_total`/`discount_amount` por unidad. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

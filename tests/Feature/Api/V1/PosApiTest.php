@@ -315,4 +315,78 @@ class PosApiTest extends TestCase
             ->assertStatus(401)
             ->assertJsonPath('message', 'No autenticado.');
     }
+
+    /**
+     * Cart of 2 units of a 150 product with a 15 discount per unit: list
+     * subtotal 300, discount 30, charge 270. Sale, layaway and order must book
+     * exactly the same numbers (one single rule for the three buttons).
+     */
+    #[Test]
+    public function it_books_the_same_totals_for_a_sale_a_layaway_and_an_order(): void
+    {
+        $line = $this->cartItem(['quantity' => 2, 'unit_price' => 135, 'discount' => 15]);
+
+        $sale = $this->withToken($this->token)->postJson('/api/v1/pos/checkout', $this->salePayload([
+            'cartItems' => [$line],
+            'subtotal' => 300,
+            'total_discount' => 30,
+            'total' => 270,
+            'payments' => [['amount' => 270, 'method' => 'efectivo', 'bank_account_id' => null, 'notes' => null]],
+        ]))->assertCreated();
+
+        $layaway = $this->withToken($this->token)->postJson('/api/v1/pos/layaway', $this->salePayload([
+            'cartItems' => [$line],
+            'subtotal' => 300,
+            'total_discount' => 30,
+            'total' => 270,
+            'payments' => [],
+            'layaway_expiration_date' => now()->addWeek()->toDateString(),
+        ]))->assertCreated();
+
+        $order = $this->withToken($this->token)->postJson('/api/v1/pos/store-order', [
+            'cash_register_session_id' => $this->cashRegisterSession->id,
+            'customerId' => $this->customer->id,
+            'cartItems' => [$line],
+            'subtotal' => 300,
+            'total_discount' => 30,
+            'shipping_cost' => 0,
+            'contact_info' => ['name' => 'Ana Ramírez'],
+            'delivery_date' => now()->addDays(2)->toDateTimeString(),
+        ])->assertCreated();
+
+        foreach (['sale' => $sale, 'layaway' => $layaway, 'order' => $order] as $label => $response) {
+            $response->assertJsonPath('transaction.subtotal', '300.00')
+                ->assertJsonPath('transaction.total_discount', '30.00')
+                ->assertJsonPath('transaction.total', 270);
+
+            $transaction = Transaction::findOrFail($response->json('transaction.id'));
+
+            $this->assertEqualsWithDelta(300, (float) $transaction->subtotal, 0.001, $label);
+            $this->assertEqualsWithDelta(30, (float) $transaction->total_discount, 0.001, $label);
+            $this->assertEqualsWithDelta(270, (float) $transaction->total, 0.001, $label);
+        }
+    }
+
+    /**
+     * A client that sends the discounted sum as the subtotal (the old order
+     * payload of the web POS) must not under-charge the order.
+     */
+    #[Test]
+    public function it_recalculates_the_subtotal_from_the_list_prices_of_the_cart(): void
+    {
+        $response = $this->withToken($this->token)->postJson('/api/v1/pos/store-order', [
+            'cash_register_session_id' => $this->cashRegisterSession->id,
+            'customerId' => $this->customer->id,
+            'cartItems' => [$this->cartItem(['quantity' => 2, 'unit_price' => 135, 'discount' => 15])],
+            'subtotal' => 270,
+            'total_discount' => 30,
+            'shipping_cost' => 0,
+            'contact_info' => ['name' => 'Ana Ramírez'],
+            'delivery_date' => now()->addDays(2)->toDateTimeString(),
+        ])->assertCreated();
+
+        $response->assertJsonPath('transaction.subtotal', '300.00')
+            ->assertJsonPath('transaction.total_discount', '30.00')
+            ->assertJsonPath('transaction.total', 270);
+    }
 }

@@ -35,9 +35,18 @@ class TransactionPaymentService
     ): Transaction {
         return DB::transaction(function () use ($validatedData, $user, $customer, $initialStatus, $debtType) {
             $now = now();
-            $totalSale = (float) $validatedData['total'];
             $paymentsFromRequest = $validatedData['payments'] ?? [];
             $sessionId = $validatedData['cash_register_session_id'];
+
+            // Totals are always recalculated from the cart: neither the web nor
+            // the phone can under-charge a discounted line by sending a
+            // different subtotal, and the three buttons book the same numbers.
+            $totals = $this->cartTotals(
+                $validatedData['cartItems'],
+                (float) ($validatedData['total_discount'] ?? 0),
+            );
+
+            $totalSale = $totals['total'];
 
             // 1. Crear la Transacción (Folio generado desde el modelo)
             $transaction = Transaction::create([
@@ -49,8 +58,8 @@ class TransactionPaymentService
                 'user_id' => $user->id,
                 'status' => $initialStatus,
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $validatedData['subtotal'],
-                'total_discount' => $validatedData['total_discount'] ?? 0,
+                'subtotal' => $totals['subtotal'],
+                'total_discount' => $totals['total_discount'],
                 'total_tax' => 0,
                 'currency' => 'MXN',
                 'status_changed_at' => $now,
@@ -122,11 +131,57 @@ class TransactionPaymentService
         });
     }
 
+    /**
+     * Cart totals of a sale, a layaway or an order: one single rule, shared by
+     * the web POS (`ShoppingCart.vue`) and the phone.
+     *
+     * - `subtotal` = Σ(list price × quantity), where the list price of a line is
+     *   `unit_price + discount` (the contract sends the discount per unit).
+     * - `total_discount` = what the caller sends (item discounts plus any
+     *   discount applied to the whole cart).
+     * - `total` = `subtotal - total_discount` (+ `shipping_cost` on an order).
+     *
+     * @param  array<int, array<string, mixed>>  $cartItems
+     * @return array{subtotal: float, total_discount: float, total: float}
+     */
+    public function cartTotals(array $cartItems, float $totalDiscount = 0.0, float $shippingCost = 0.0): array
+    {
+        $subtotal = 0.0;
+
+        foreach ($cartItems as $item) {
+            $unitPrice = (float) ($item['unit_price'] ?? 0);
+            $unitDiscount = (float) ($item['discount'] ?? 0);
+            $quantity = (float) ($item['quantity'] ?? 0);
+
+            // "Aumento manual" sends a negative discount: the list price stays
+            // the base and the total grows by that amount (same as the web).
+            $subtotal += ($unitPrice + $unitDiscount) * $quantity;
+        }
+
+        $subtotal = round($subtotal, 2);
+        $totalDiscount = round($totalDiscount, 2);
+
+        return [
+            'subtotal' => $subtotal,
+            'total_discount' => $totalDiscount,
+            'total' => round($subtotal - $totalDiscount + $shippingCost, 2),
+        ];
+    }
+
     public function handleNewOrder(User $user, array $data): Transaction
     {
         return DB::transaction(function () use ($user, $data) {
             $now = now();
             $sessionId = $data['cash_register_session_id'];
+            $shippingCost = (float) ($data['shipping_cost'] ?? 0);
+
+            // Same rule as the sale: the subtotal comes from the list prices of
+            // the cart, not from what the client sends.
+            $totals = $this->cartTotals(
+                $data['cartItems'],
+                (float) ($data['total_discount'] ?? 0),
+                $shippingCost,
+            );
 
             $transaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
@@ -138,9 +193,9 @@ class TransactionPaymentService
                 'status' => TransactionStatus::TO_DELIVER,
                 'delivery_status' => 'pending',
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $data['subtotal'],
-                'shipping_cost' => $data['shipping_cost'] ?? 0,
-                'total_discount' => $data['total_discount'] ?? 0,
+                'subtotal' => $totals['subtotal'],
+                'shipping_cost' => $shippingCost,
+                'total_discount' => $totals['total_discount'],
                 'total_tax' => 0,
                 'currency' => 'MXN',
                 'notes' => $data['notes'] ?? null,

@@ -109,11 +109,12 @@ class RegisterSaleRequest extends FormRequest
      * Amount that would be left as debt (0 when the sale is fully covered).
      *
      * Mirrors the service: it uses the customer balance first and then the
-     * direct payments.
+     * direct payments. The total is the one calculated from the cart (never the
+     * one sent by the client), so the credit limit is checked against the real
+     * charge.
      */
-    public function pendingCreditAmount(?Customer $customer): float
+    public function pendingCreditAmount(?Customer $customer, float $total): float
     {
-        $total = (float) $this->validated('total');
         $paid = (float) collect($this->validated('payments') ?? [])->sum('amount');
         $balanceToUse = ($this->validated('use_balance') && $customer)
             ? min((float) $customer->balance, $total)
@@ -125,6 +126,10 @@ class RegisterSaleRequest extends FormRequest
     /**
      * Data the payment service expects (same keys as the web request).
      *
+     * `subtotal` and `total` are not forwarded on purpose: the server
+     * recalculates them from the cart (`TransactionPaymentService::cartTotals`)
+     * so the charge never depends on what the client sends.
+     *
      * @return array<string, mixed>
      */
     public function saleData(): array
@@ -133,9 +138,7 @@ class RegisterSaleRequest extends FormRequest
             'cash_register_session_id' => (int) $this->validated('cash_register_session_id'),
             'guest_name' => $this->validated('guest_name'),
             'cartItems' => $this->validated('cartItems'),
-            'subtotal' => $this->validated('subtotal'),
             'total_discount' => $this->validated('total_discount') ?? 0,
-            'total' => $this->validated('total'),
             'payments' => $this->validated('payments') ?? [],
             'use_balance' => (bool) $this->validated('use_balance'),
             'layaway_expiration_date' => $this->validated('layaway_expiration_date'),

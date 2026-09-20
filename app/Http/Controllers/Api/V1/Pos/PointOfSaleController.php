@@ -76,7 +76,15 @@ class PointOfSaleController extends Controller
         }
 
         $customer = $request->customer();
-        $creditAmount = $request->pendingCreditAmount($customer);
+
+        // The total the server will charge is the one calculated from the cart,
+        // so the credit check and the change use the same number as the sale.
+        $totals = $this->payments->cartTotals(
+            $request->validated('cartItems'),
+            (float) $request->validated('total_discount', 0),
+        );
+
+        $creditAmount = $request->pendingCreditAmount($customer, $totals['total']);
 
         if ($creditAmount > 0.01) {
             if (!$customer) {
@@ -102,7 +110,7 @@ class PointOfSaleController extends Controller
 
         return response()->json([
             'transaction' => $this->transactionPayload($transaction, $user),
-            'change' => $this->cashChange($request),
+            'change' => $this->cashChange($request, $totals['total']),
             'print' => $this->printPayload($transaction, $user, 'pos'),
         ], 201);
     }
@@ -110,7 +118,7 @@ class PointOfSaleController extends Controller
     /**
      * Cash change to give back: only when the sale was paid in cash alone.
      */
-    private function cashChange(RegisterSaleRequest $request): float
+    private function cashChange(RegisterSaleRequest $request, float $chargedTotal): float
     {
         $payments = collect($request->validated('payments') ?? []);
 
@@ -118,7 +126,7 @@ class PointOfSaleController extends Controller
             return 0.0;
         }
 
-        return max(0, round($payments->sum('amount') - (float) $request->validated('total'), 2));
+        return max(0, round($payments->sum('amount') - $chargedTotal, 2));
     }
 
     /**
