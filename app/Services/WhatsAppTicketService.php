@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\ServiceOrderStatus;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
+use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use Carbon\Carbon;
 
@@ -240,6 +242,63 @@ class WhatsAppTicketService
                 ? '¡Gracias por tu pedido! Ya ha sido completado.'
                 : '¡Gracias por tu pedido!',
         ];
+    }
+
+    /**
+     * Payload del ticket de WhatsApp de una ORDEN DE SERVICIO.
+     *
+     * Lo usa la app móvil (`POST /print/whatsapp-ticket` con
+     * `data_source_type=service_order`): una orden de servicio no tiene el
+     * ticket de una venta, así que lleva su propia forma (equipo, estatus,
+     * refacciones, anticipos y saldo pendiente).
+     */
+    public function buildServiceOrderPayload(ServiceOrder $serviceOrder): array
+    {
+        $serviceOrder->loadMissing(['customer', 'branch.subscription', 'items', 'transaction.payments']);
+
+        $subscription = $serviceOrder->branch?->subscription;
+        $customer = $serviceOrder->customer;
+        $total = (float) $serviceOrder->final_total;
+        $totalPaid = round((float) $serviceOrder->transaction?->payments->sum('amount'), 2);
+        $remaining = max(0, round($total - $totalPaid, 2));
+
+        return [
+            'kind' => 'service_order',
+            'businessName' => $subscription?->commercial_name ?: ($serviceOrder->branch?->name ?: 'Mi Negocio'),
+            'title' => 'ORDEN DE SERVICIO',
+            'date' => Carbon::parse($serviceOrder->received_at)->format('d/m/Y - H:i'),
+            'folio' => $serviceOrder->folio,
+            'statusLabel' => $this->serviceOrderStatusLabel($serviceOrder->status),
+            'customer' => $customer?->name ?: ($serviceOrder->customer_name ?: 'Público en General'),
+            'equipment' => $serviceOrder->item_description,
+            'reportedProblems' => $serviceOrder->reported_problems,
+            'technician' => $serviceOrder->technician_name,
+            'parts' => $serviceOrder->items->map(fn ($item) => [
+                'cantidad' => (float) $item->quantity,
+                'descripcion' => $item->description,
+                'total' => '$' . number_format((float) $item->line_total, 2),
+            ])->values(),
+            'total' => '$' . number_format($total, 2) . ' MXN',
+            'totalPaid' => '$' . number_format($totalPaid, 2) . ' MXN',
+            'remainingDue' => $remaining > 0.01 ? '$' . number_format($remaining, 2) . ' MXN' : null,
+            'promisedAt' => $serviceOrder->promised_at?->format('d/m/Y'),
+            'finalMessage' => '¡Gracias por tu preferencia!',
+        ];
+    }
+
+    /**
+     * Etiqueta del estatus de una orden de servicio para el cliente final.
+     */
+    private function serviceOrderStatusLabel(ServiceOrderStatus $status): string
+    {
+        return match ($status) {
+            ServiceOrderStatus::PENDING => 'Recibido',
+            ServiceOrderStatus::IN_PROGRESS => 'En reparación',
+            ServiceOrderStatus::WAITING_FOR_PARTS => 'Esperando refacciones',
+            ServiceOrderStatus::FINISHED => 'Listo para entregar',
+            ServiceOrderStatus::DELIVERED => 'Entregado',
+            ServiceOrderStatus::CANCELLED => 'Cancelado',
+        };
     }
 
     /**

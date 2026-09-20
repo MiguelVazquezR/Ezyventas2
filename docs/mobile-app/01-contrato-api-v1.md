@@ -1383,6 +1383,44 @@ Variantes de `ticket` (las construye `WhatsAppTicketService`):
 | `abono` | abono a una venta existente | `saleTotal`, `previousDue`, `abonado`, `remainingDue`, `liquidated` |
 | `order` | pedido (por entregar) | estado del pedido, `items[]`, `total` |
 | `order_payment` | abono a un pedido | `estado`, `total`, `previousDue`, `abonado`, `paymentMethod`, `remainingDue` |
+| `service_order` | orden de servicio (`data_source_type=service_order`) | `title`, `statusLabel`, `equipment`, `reportedProblems`, `technician`, `parts[]`, `total`, `totalPaid`, `remainingDue`, `promisedAt` |
+
+Ejemplo de ticket de una orden de servicio (`POST /print/whatsapp-ticket` con
+`{"data_source_type":"service_order","data_source_id":314}`):
+```json
+{
+  "ticket": {
+    "kind": "service_order",
+    "businessName": "Refaccionaria López",
+    "title": "ORDEN DE SERVICIO",
+    "date": "15/09/2026 - 16:00",
+    "folio": "OS-014",
+    "statusLabel": "En reparación",
+    "customer": "Ana Ramírez",
+    "equipment": "iPhone 13, pantalla rota",
+    "reportedProblems": "No enciende después de una caída",
+    "technician": "Luis Torres",
+    "parts": [{ "cantidad": 1, "descripcion": "Cambio de pantalla (original)", "total": "$1,450.00" }],
+    "total": "$1,400.00 MXN",
+    "totalPaid": "$700.00 MXN",
+    "remainingDue": "$700.00 MXN",
+    "promisedAt": "20/09/2026",
+    "finalMessage": "¡Gracias por tu preferencia!"
+  },
+  "customer_phone": "4771112233",
+  "customer_id": 8
+}
+```
+`totalPaid` / `remainingDue` salen de la venta vinculada a la orden (los anticipos cobrados).
+`statusLabel` ∈ `Recibido` | `En reparación` | `Esperando refacciones` | `Listo para entregar` |
+`Entregado` | `Cancelado`.
+
+> **`kind` depende del documento resuelto, no del `data_source_type` pedido**: `pos`, `transaction`,
+> `general` y `order` resuelven una venta y devuelven `sale` u `order` según `is_order` de esa venta;
+> `service_order` resuelve una orden de servicio y devuelve `service_order`. Un origen que no puede
+> producir ticket de WhatsApp (`product`, `customer`) responde `422`
+> `{"code":"no_whatsapp_ticket","message":"Este documento no tiene ticket de WhatsApp."}` (antes
+> respondía `200` con `ticket: null` y la app creía que había enviado algo).
 
 > **Implementación (Fase 4):** el ticket de venta lo construye ahora
 > `WhatsAppTicketService::buildSalePayload()` (antes vivía en el controlador web), así que la web y
@@ -1780,6 +1818,7 @@ Los siguientes `code` son códigos **de negocio** que devuelven los endpoints a 
 | `invalid_current_password` | "La contraseña actual no es correcta." | No |
 | `unsynced_operations` | "Tienes operaciones sin sincronizar. Sincronízalas antes de continuar." | Sí, tras sincronizar |
 | `payment_exceeds_pending` | "El monto total del pago excede el saldo pendiente." (solo `tarjeta`/`transferencia`/`saldo`; el efectivo devuelve `change`) | No: corregir el monto |
+| `no_whatsapp_ticket` | "Este documento no tiene ticket de WhatsApp." (`product`, `customer`) | No |
 
 ---
 
@@ -1879,6 +1918,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P0 de la app móvil (A4):** una sola regla de sobrepago entre `/pos/checkout` y `POST /transactions/{id}/payments`. Antes el abono respondía `422` «El monto total del pago excede el saldo pendiente.» (sin `code`) mientras la venta **recortaba en silencio** el pago al total, incluso con tarjeta. Ahora: el **efectivo** puede exceder (el sobrante es el cambio, se guarda solo lo que liquida y ambos endpoints devuelven `change`); `tarjeta`/`transferencia`/`saldo` que excedan responden `422` con el mismo `message` y `code: payment_exceeds_pending` en los dos. `applyPaymentToTransaction` devuelve el cambio. Cobertura: `PosApiTest` (tarjeta mayor al total) y `TransactionWriteApiTest` (abono mayor con tarjeta + cambio de un abono en efectivo). | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A6):** borrar una orden de servicio revierte sus efectos. `DeleteServiceOrderAction` solo borraba la orden y su venta, dejando el stock consumido y la deuda del cliente intactos (hallazgo 13); ahora devuelve el stock de las refacciones (`restoreStock`) y cancela la deuda generada por el alta (`cancelDebt` → `credito_por_cancelacion`), la misma reversión que al cancelar la O.S. El borrado masivo de la web pasa por la misma acción (antes hacía un `delete` masivo crudo). Los abonos ya cobrados no se reembolsan. Cobertura: caso nuevo en `ServiceOrderWriteApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B1):** el logo de la plantilla viaja dentro del payload ESC/POS. `POST /print/bluetooth-payload` devolvía solo texto (los elementos `image`/`local_image` se ignoraban en `buildEscPosRawText`), así que el ticket salía sin logo aunque el respaldo HTML sí lo incluyera (hallazgo 35). Nuevo `App\Services\Printing\EscPosImageRasterizer`: descarga la imagen en el servidor, la escala al ancho del papel (384/576 puntos), la centra y la convierte a mono 1 bit dentro de un comando `GS v 0` en la posición de la plantilla. Si la imagen no se puede leer, el ticket se genera sin logo y se registra un aviso. El camino del plugin de escritorio (`/print/payload`) no cambia. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (B3):** `POST /print/whatsapp-ticket` arma el ticket de una **orden de servicio**. Antes resolvía el origen con `PrintDataSourceResolver` y, si no era una `Transaction`, respondía `200` con `ticket: null` (`customer_phone: null`), así que la app creía que había enviado algo cuando no tenía nada que mandar (hallazgo 16: `[live] WhatsApp service_order=3 ticket=null`). Nuevo `WhatsAppTicketService::buildServiceOrderPayload()` (`kind: service_order`: folio, estatus, equipo, refacciones, anticipos, saldo y fecha prometida) y, para un origen que no puede producir ticket (`product`, `customer`), `422` con `code: no_whatsapp_ticket` en vez de un `null` silencioso. El `kind` documenta que depende del documento resuelto. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

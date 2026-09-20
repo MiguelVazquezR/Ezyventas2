@@ -9,6 +9,7 @@ use App\Http\Requests\Api\V1\Printing\PrintTemplatesRequest;
 use App\Http\Requests\Api\V1\Printing\TicketHtmlRequest;
 use App\Http\Requests\Api\V1\Printing\WhatsAppTicketRequest;
 use App\Models\PrintTemplate;
+use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\PrintEncoderService;
@@ -103,15 +104,28 @@ class PrintController extends Controller
     {
         $dataSource = $this->resolveSource($request);
 
-        if (!$dataSource instanceof Transaction) {
+        // A service order has its own ticket: equipment, status, parts and the
+        // pending balance (the customer phone comes from the order).
+        if ($dataSource instanceof ServiceOrder) {
             return response()->json([
-                'ticket' => null,
-                'customer_phone' => null,
-                'customer_id' => null,
+                'ticket' => $this->whatsAppTickets->buildServiceOrderPayload($dataSource),
+                'customer_phone' => $dataSource->customer?->phone ?: ($dataSource->customer_phone ?: null),
+                'customer_id' => $dataSource->customer?->id,
             ]);
         }
 
+        // Anything that is not a sale nor an order has no WhatsApp ticket: say
+        // it, instead of answering 200 with `ticket: null` (the app then showed
+        // "sent" with nothing to send).
+        if (!$dataSource instanceof Transaction) {
+            return response()->json([
+                'code' => 'no_whatsapp_ticket',
+                'message' => 'Este documento no tiene ticket de WhatsApp.',
+            ], 422);
+        }
+
         $customer = $dataSource->customer;
+        $dataSource->loadMissing(['branch.subscription']);
 
         // Orders get their own ticket (with the delivery status).
         if ($dataSource->isOrder()) {

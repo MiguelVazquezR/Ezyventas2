@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1;
 
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
@@ -13,6 +14,8 @@ use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\PrintTemplate;
 use App\Models\Product;
+use App\Models\ServiceOrder;
+use App\Models\ServiceOrderItem;
 use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
@@ -418,5 +421,94 @@ class PrintingApiTest extends TestCase
         imagedestroy($image);
 
         return $bytes;
+    }
+
+    /**
+     * A service order must have its WhatsApp ticket: the endpoint answered
+     * `ticket: null` for every source that was not a sale (hallazgo 16).
+     */
+    #[Test]
+    public function it_builds_the_whatsapp_ticket_of_a_service_order(): void
+    {
+        $serviceOrder = ServiceOrder::factory()->create([
+            'branch_id' => $this->branch->id,
+            'user_id' => $this->owner->id,
+            'customer_id' => $this->sale->customer_id,
+            'status' => ServiceOrderStatus::IN_PROGRESS,
+            'folio' => 'OS-014',
+            'technician_name' => 'Luis Torres',
+            'item_description' => 'iPhone 13, pantalla rota',
+            'subtotal' => 1450,
+            'discount_amount' => 50,
+            'final_total' => 1400,
+            'received_at' => now()->subDays(2),
+            'promised_at' => now()->addDays(2),
+        ]);
+
+        ServiceOrderItem::create([
+            'service_order_id' => $serviceOrder->id,
+            'description' => 'Cambio de pantalla (original)',
+            'quantity' => 1,
+            'unit_price' => 1450,
+            'line_total' => 1450,
+        ]);
+
+        $linkedSale = Transaction::factory()->create([
+            'branch_id' => $this->branch->id,
+            'customer_id' => $this->sale->customer_id,
+            'user_id' => $this->owner->id,
+            'transactionable_type' => ServiceOrder::class,
+            'transactionable_id' => $serviceOrder->id,
+            'status' => TransactionStatus::PENDING,
+            'channel' => TransactionChannel::SERVICE_ORDER,
+            'subtotal' => 1400,
+            'total_discount' => 0,
+            'total_tax' => 0,
+            'shipping_cost' => 0,
+        ]);
+
+        Payment::factory()->create([
+            'transaction_id' => $linkedSale->id,
+            'amount' => 700,
+            'payment_method' => PaymentMethod::CASH,
+            'status' => PaymentStatus::COMPLETED,
+        ]);
+
+        $this->withToken($this->token)
+            ->postJson('/api/v1/print/whatsapp-ticket', [
+                'data_source_type' => 'service_order',
+                'data_source_id' => $serviceOrder->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('ticket.kind', 'service_order')
+            ->assertJsonPath('ticket.title', 'ORDEN DE SERVICIO')
+            ->assertJsonPath('ticket.folio', 'OS-014')
+            ->assertJsonPath('ticket.statusLabel', 'En reparación')
+            ->assertJsonPath('ticket.equipment', 'iPhone 13, pantalla rota')
+            ->assertJsonPath('ticket.technician', 'Luis Torres')
+            ->assertJsonPath('ticket.parts.0.descripcion', 'Cambio de pantalla (original)')
+            ->assertJsonPath('ticket.total', '$1,400.00 MXN')
+            ->assertJsonPath('ticket.totalPaid', '$700.00 MXN')
+            ->assertJsonPath('ticket.remainingDue', '$700.00 MXN')
+            ->assertJsonPath('customer_phone', '4771112233')
+            ->assertJsonPath('customer_id', $this->sale->customer_id);
+    }
+
+    /**
+     * A source that cannot produce a WhatsApp ticket says it explicitly instead
+     * of answering `200` with `ticket: null`.
+     */
+    #[Test]
+    public function it_rejects_a_whatsapp_ticket_for_a_source_without_ticket(): void
+    {
+        $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+        $this->withToken($this->token)
+            ->postJson('/api/v1/print/whatsapp-ticket', [
+                'data_source_type' => 'product',
+                'data_source_id' => $product->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Este documento no tiene ticket de WhatsApp.');
     }
 }
