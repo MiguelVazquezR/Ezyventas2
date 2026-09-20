@@ -329,4 +329,32 @@ class AccountApiTest extends TestCase
             'payment_details' => ['folio' => 'PAGO-004'],
         ]);
     }
+
+    /**
+     * The history must carry the id of the payment: it is what the invoice
+     * endpoint of the phone needs (hallazgo 24).
+     */
+    #[Test]
+    public function it_includes_the_payment_id_in_the_subscription_history(): void
+    {
+        $approved = $this->subscriptionPayment(SubscriptionPaymentStatus::APPROVED);
+
+        $history = $this->withToken($this->token)
+            ->getJson('/api/v1/subscription')
+            ->assertOk()
+            ->json('history');
+
+        $entry = collect($history)->first(
+            fn (array $version) => ($version['payment']['can_request_invoice'] ?? false) === true
+        );
+
+        $this->assertNotNull($entry, 'El historial no trae un pago facturable.');
+        $this->assertSame($approved->id, $entry['payment']['id']);
+
+        // The id of the history is exactly what the invoice endpoint accepts.
+        $this->withToken($this->token)
+            ->postJson('/api/v1/subscription/payments/' . $entry['payment']['id'] . '/request-invoice')
+            ->assertOk()
+            ->assertJsonPath('message', 'Factura solicitada. Nos pondremos en contacto pronto.');
+    }
 }

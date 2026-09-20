@@ -216,6 +216,8 @@ class SubscriptionReadService
                     'created_at' => $version->created_at?->toIso8601String(),
                     'total' => $payment ? number_format((float) $payment->amount, 2, '.', '') : null,
                     'payment' => $payment ? [
+                        // The id is what the phone needs to request the invoice.
+                        'id' => $payment->id,
                         'folio' => $payment->payment_details['folio'] ?? null,
                         'status' => $payment->status instanceof \BackedEnum ? $payment->status->value : $payment->status,
                         'paid_at' => $paidAt

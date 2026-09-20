@@ -1766,10 +1766,14 @@ muestra esta opción cuando `is_subscription_owner = true`. Implementado en
   "last_rejected_payment": null,
   "fiscal_document_url": "https://.../constancia.pdf",
   "history": [
-    { "version": 3, "created_at": "2026-09-18T12:00:00.000000Z", "total": "599.00", "payment": { "folio": "PAGO-004", "status": "completado", "paid_at": "2026-09-18T12:05:00.000000Z", "can_request_invoice": true } }
+    { "version": 3, "created_at": "2026-09-18T12:00:00.000000Z", "total": "599.00", "payment": { "id": 412, "folio": "PAGO-004", "status": "completado", "paid_at": "2026-09-18T12:05:00.000000Z", "can_request_invoice": true } }
   ]
 }
 ```
+- `history[].payment.id` es el id que recibe
+  `POST /subscription/payments/{paymentId}/request-invoice`, así que la app puede pedir la factura
+  desde el teléfono cuando `can_request_invoice` es `true` (el único estado facturable es
+  `status = completado`/aprobado; cualquier otro responde `403 payment_not_approved`).
 - `status_data.warning` alimenta el banner de suscripción por vencer/expirada
   (equivalente a `subscriptionWarning` del layout web).
 
@@ -1943,6 +1947,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P1 de la app móvil (B3):** `POST /print/whatsapp-ticket` arma el ticket de una **orden de servicio**. Antes resolvía el origen con `PrintDataSourceResolver` y, si no era una `Transaction`, respondía `200` con `ticket: null` (`customer_phone: null`), así que la app creía que había enviado algo cuando no tenía nada que mandar (hallazgo 16: `[live] WhatsApp service_order=3 ticket=null`). Nuevo `WhatsAppTicketService::buildServiceOrderPayload()` (`kind: service_order`: folio, estatus, equipo, refacciones, anticipos, saldo y fecha prometida) y, para un origen que no puede producir ticket (`product`, `customer`), `422` con `code: no_whatsapp_ticket` en vez de un `null` silencioso. El `kind` documenta que depende del documento resuelto. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B4):** `GET /print/templates` acepta **varios contextos** a la vez (`?context[]=pos&context[]=general` o `?context=pos,general`), que es lo que necesita la web (pide `pos`+`general`, `transaction`+`general`, …). Antes aceptaba uno solo, así que `?context=pos` devolvía la lista vacía con suscripciones cuyas plantillas de ticket son `general`. Un solo contexto y `?type=` siguen comportándose igual; un contexto desconocido responde `422` con `errors.context.N`. Cobertura: caso nuevo en `PrintingApiTest` (array, coma, un solo contexto, `type` y contexto inválido). | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B2):** las etiquetas con imagen se imprimen completas desde un cliente ligero. `POST /print/payload` (TSPL) ignoraba los elementos `image`/`local_image` —y en la plantilla de la app llegaba la operación `DescargarImagenDeInternetEImprimir`, que es del plugin de escritorio y el teléfono no puede ejecutar (hallazgos 18 y pendiente 2)—. Ahora el servidor rasteriza la imagen a 1 bit (`MonochromeBitmap`) y la inserta en el mismo texto TSPL como `BITMAP x,y,ancho_en_bytes,alto,0,<hex>` limitada al ancho de la etiqueta. Si la imagen no se puede resolver, la etiqueta se devuelve sin ella y la respuesta lo declara en el campo nuevo `unsupported_operations` (`"Image: <url>"`). `PrintEncoderService::encodeWithReport()` expone el reporte y `encode()` sigue igual para el resto de llamadores. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (D1):** `GET /subscription` incluye `history[].payment.id`, el id que exige `POST /subscription/payments/{paymentId}/request-invoice`. Sin él la app no podía solicitar la factura de un pago desde el teléfono (`[live] … puedeFactura=true idPago=null`, hallazgo 24). Cobertura: caso nuevo en `AccountApiTest` que además usa ese id contra el endpoint de factura. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se
