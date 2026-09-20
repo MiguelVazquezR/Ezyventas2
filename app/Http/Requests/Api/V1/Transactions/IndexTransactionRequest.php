@@ -16,11 +16,37 @@ class IndexTransactionRequest extends FormRequest
         return $this->user()?->can('transactions.access') ?? false;
     }
 
+    /**
+     * Normalizes `status` to an array.
+     *
+     * The app opens «deudas por vencer» with two statuses at once (apartado +
+     * pendiente); one value, a comma separated list and the array form are all
+     * accepted, and a single status keeps behaving exactly as before.
+     */
+    protected function prepareForValidation(): void
+    {
+        $status = $this->input('status');
+
+        if ($status === null || $status === '') {
+            return;
+        }
+
+        $statuses = is_array($status) ? $status : explode(',', (string) $status);
+
+        $this->merge([
+            'status' => array_values(array_filter(
+                array_map(fn ($value) => is_string($value) ? trim($value) : $value, $statuses),
+                fn ($value) => $value !== null && $value !== ''
+            )),
+        ]);
+    }
+
     public function rules(): array
     {
         return [
             'search' => ['nullable', 'string', 'max:255'],
-            'status' => ['nullable', Rule::enum(TransactionStatus::class)],
+            'status' => ['nullable', 'array'],
+            'status.*' => [Rule::enum(TransactionStatus::class)],
             'date_start' => ['nullable', 'date'],
             'date_end' => ['nullable', 'date'],
             'sortField' => ['nullable', Rule::in(['created_at', 'folio', 'total', 'customer.name'])],
@@ -34,7 +60,8 @@ class IndexTransactionRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'status.enum' => 'El estatus seleccionado no es válido.',
+            'status.array' => 'El estatus seleccionado no es válido.',
+            'status.*.enum' => 'El estatus seleccionado no es válido.',
             'date_start.date' => 'La fecha inicial no es válida.',
             'date_end.date' => 'La fecha final no es válida.',
             'sortField.in' => 'No se puede ordenar por ese campo.',
@@ -49,6 +76,8 @@ class IndexTransactionRequest extends FormRequest
     {
         return [
             'search' => $this->validated('search'),
+            // Always an array: the history may be filtered by one status or by
+            // several at once (see prepareForValidation).
             'status' => $this->validated('status'),
             'date_start' => $this->validated('date_start'),
             'date_end' => $this->validated('date_end'),

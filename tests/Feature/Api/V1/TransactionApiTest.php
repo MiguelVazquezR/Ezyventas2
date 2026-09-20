@@ -277,4 +277,45 @@ class TransactionApiTest extends TestCase
         $this->assertSame(0.0, (float) $rows[$refunded->id]['remaining_due']);
         $this->assertSame(170.0, (float) $rows[$pending->id]['remaining_due']);
     }
+
+    /**
+     * The history accepts several statuses at once, which is what the app needs
+     * for «deudas por vencer» (layaway + credit); a single status keeps working
+     * exactly as before (hallazgo 29).
+     */
+    #[Test]
+    public function it_filters_the_history_by_several_statuses_at_once(): void
+    {
+        $token = $this->tokenFor($this->ownerUser());
+
+        $this->sale(['folio' => 'V-101', 'status' => TransactionStatus::ON_LAYAWAY]);
+        $this->sale(['folio' => 'V-102', 'status' => TransactionStatus::PENDING]);
+        $this->sale(['folio' => 'V-103', 'status' => TransactionStatus::COMPLETED]);
+
+        // Array form.
+        $this->withToken($token)
+            ->getJson('/api/v1/transactions?status[]=apartado&status[]=pendiente')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('total', 2);
+
+        // Comma separated form.
+        $this->withToken($token)
+            ->getJson('/api/v1/transactions?status=apartado,pendiente')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        // A single status behaves exactly as before.
+        $this->withToken($token)
+            ->getJson('/api/v1/transactions?status=apartado')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.folio', 'V-101');
+
+        // An unknown status is still rejected.
+        $this->withToken($token)
+            ->getJson('/api/v1/transactions?status=apartado,volando')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['status.1' => 'El estatus seleccionado no es válido.']);
+    }
 }

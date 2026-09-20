@@ -58,7 +58,9 @@ class TransactionReadService
         }
 
         if (!empty($filters['status'])) {
-            $query->where('transactions.status', $filters['status']);
+            // One or several statuses at once: the app opens «deudas por vencer»
+            // with layaway + credit together.
+            $query->whereIn('transactions.status', (array) $filters['status']);
         }
 
         if (!empty($filters['date_start'])) {
