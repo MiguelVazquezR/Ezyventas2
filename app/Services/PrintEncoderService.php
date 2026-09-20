@@ -13,6 +13,7 @@ use App\Models\ServiceOrder;
 use App\Models\Subscription;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\Printing\EscPosImageRasterizer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -55,7 +56,7 @@ class PrintEncoderService
             $rawBytes .= "\x1B" . "p" . "\x00" . "\x19" . "\xFA";
         }
 
-        $rawBytes .= self::buildEscPosRawText($elements, $config, $dataSource);
+        $rawBytes .= self::buildEscPosRawText($elements, $config, $dataSource, withImages: true);
 
         return base64_encode($rawBytes);
     }
@@ -230,7 +231,16 @@ class PrintEncoderService
         return $operations;
     }
 
-    private static function buildEscPosRawText(array $elements, array $config, $dataSource): string
+    /**
+     * Raw ESC/POS bytes of the ticket.
+     *
+     * @param  bool  $withImages  true only for the Bluetooth payload: there the
+     *                            server rasterizes the images, because the phone
+     *                            cannot download them. The desktop plugin (which
+     *                            prints through `/print/payload`) keeps receiving
+     *                            the image as its own operation.
+     */
+    private static function buildEscPosRawText(array $elements, array $config, $dataSource, bool $withImages = false): string
     {
         $esc = "\x1B";
         $gs = "\x1D";
@@ -262,6 +272,21 @@ class PrintEncoderService
                     break;
                 case 'line_break':
                     $fullText .= "\n";
+                    break;
+                case 'image':
+                case 'local_image':
+                    if (!$withImages || empty($element['data']['url'])) {
+                        break;
+                    }
+
+                    $raster = EscPosImageRasterizer::command(
+                        (string) $element['data']['url'],
+                        EscPosImageRasterizer::dotsForPaperWidth($config['paperWidth'] ?? '80mm')
+                    );
+
+                    if ($raster !== null) {
+                        $fullText .= $raster . "\n";
+                    }
                     break;
                 case 'barcode':
                     $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);

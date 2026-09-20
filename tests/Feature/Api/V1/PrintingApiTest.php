@@ -17,6 +17,7 @@ use App\Models\Transaction;
 use App\Models\TransactionItem;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Feature\Api\V1\Concerns\BuildsMobileApiContext;
 use Tests\TestCase;
@@ -334,5 +335,88 @@ class PrintingApiTest extends TestCase
             'data_source_type' => 'transaction',
             'data_source_id' => $this->sale->id,
         ])->assertStatus(401);
+    }
+
+    /**
+     * The logo of the template must travel inside the ESC/POS bytes: the phone
+     * cannot download it, so the server rasterizes it (hallazgo 35).
+     */
+    #[Test]
+    public function it_embeds_the_logo_of_the_template_in_the_esc_pos_payload(): void
+    {
+        $logoUrl = 'https://ezyventas.test/storage/logo.png';
+
+        $this->template->update(['content' => [
+            'config' => ['paperWidth' => '80mm', 'feedLines' => 0],
+            'elements' => [
+                ['type' => 'local_image', 'data' => ['url' => $logoUrl]],
+                ['type' => 'text', 'data' => ['text' => 'Hola Mundo']],
+            ],
+        ]]);
+
+        Http::fake([$logoUrl => Http::response($this->logoBytes(), 200, ['Content-Type' => 'image/png'])]);
+
+        $commands = base64_decode(
+            $this->withToken($this->token)->postJson('/api/v1/print/bluetooth-payload', [
+                'template_id' => $this->template->id,
+                'data_source_type' => 'pos',
+                'data_source_id' => $this->sale->id,
+            ])->assertOk()->json('commands_base64'),
+            true
+        );
+
+        // The image arrives as a raster bitmap (GS v 0) of 72 bytes per row,
+        // which is exactly the 576 dots of the 80 mm paper.
+        $this->assertStringContainsString("\x1D\x76\x30\x00" . chr(72) . chr(0), $commands);
+        $this->assertStringContainsString('Hola Mundo', $commands);
+        Http::assertSent(fn ($request) => $request->url() === $logoUrl);
+    }
+
+    /**
+     * A logo that cannot be read never breaks the ticket: it prints without it.
+     */
+    #[Test]
+    public function it_prints_the_ticket_without_the_logo_when_it_cannot_be_read(): void
+    {
+        $logoUrl = 'https://ezyventas.test/storage/roto.png';
+
+        $this->template->update(['content' => [
+            'config' => ['paperWidth' => '58mm', 'feedLines' => 0],
+            'elements' => [
+                ['type' => 'local_image', 'data' => ['url' => $logoUrl]],
+                ['type' => 'text', 'data' => ['text' => 'Hola Mundo']],
+            ],
+        ]]);
+
+        Http::fake([$logoUrl => Http::response('esto no es una imagen', 200)]);
+
+        $commands = base64_decode(
+            $this->withToken($this->token)->postJson('/api/v1/print/bluetooth-payload', [
+                'template_id' => $this->template->id,
+                'data_source_type' => 'pos',
+                'data_source_id' => $this->sale->id,
+            ])->assertOk()->json('commands_base64'),
+            true
+        );
+
+        $this->assertStringNotContainsString("\x1D\x76\x30\x00", $commands);
+        $this->assertStringContainsString('Hola Mundo', $commands);
+    }
+
+    /**
+     * Real PNG bytes for the fake logo (GD is available in the test runtime).
+     */
+    private function logoBytes(): string
+    {
+        $image = imagecreatetruecolor(120, 40);
+        imagefill($image, 0, 0, imagecolorallocate($image, 255, 255, 255));
+        imagefilledrectangle($image, 10, 10, 110, 30, imagecolorallocate($image, 0, 0, 0));
+
+        ob_start();
+        imagepng($image);
+        $bytes = (string) ob_get_clean();
+        imagedestroy($image);
+
+        return $bytes;
     }
 }

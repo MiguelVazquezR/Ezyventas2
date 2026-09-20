@@ -1313,6 +1313,13 @@ Response `200`:
 `data_source_type` acepta: `pos` | `transaction` | `service_order` | `product` | `customer` |
 `order` | `general`.
 
+**Logo del negocio:** si la plantilla trae un elemento de imagen (`image` / `local_image`), el
+servidor lo **descarga, lo escala al ancho del papel** (58 mm = 384 puntos, 80 mm = 576) y lo
+inserta en `commands_base64` como **bitmap raster ESC/POS** (`GS v 0`), en el lugar que la plantilla
+le asigna. La app solo envía los bytes: **no** descarga ni convierte la imagen (los dominios internos
+no resuelven desde el teléfono). Si la imagen no se puede descargar o no es una imagen válida, el
+ticket se genera **sin** el logo (se registra un aviso en el log) en vez de fallar.
+
 Procedimiento en la app (idéntico a `resources/js/Composables/useBluetoothPrinter.js`):
 1. `base64Decode(commands_base64)` → `Uint8List`.
 2. Escribir en la característica del servicio GATT (UUIDs probados:
@@ -1871,6 +1878,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P0 de la app móvil (A3):** el saldo a favor **solo** se aplica cuando el request lo pide (`use_balance: true`). `handleNewSale` forzaba el cobro del saldo del cliente cuando la venta quedaba con deuda (bloque «COBRO AUTOMÁTICO DE SALDO»), así que un apartado de $140 de un cliente con $1 a favor consumía ese peso sin que el request lo pidiera y sin reflejarlo el cajero. Ahora `use_balance` es opcional (`ausente` = `false`) y el saldo no gastado queda como deuda del cliente. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A4):** una sola regla de sobrepago entre `/pos/checkout` y `POST /transactions/{id}/payments`. Antes el abono respondía `422` «El monto total del pago excede el saldo pendiente.» (sin `code`) mientras la venta **recortaba en silencio** el pago al total, incluso con tarjeta. Ahora: el **efectivo** puede exceder (el sobrante es el cambio, se guarda solo lo que liquida y ambos endpoints devuelven `change`); `tarjeta`/`transferencia`/`saldo` que excedan responden `422` con el mismo `message` y `code: payment_exceeds_pending` en los dos. `applyPaymentToTransaction` devuelve el cambio. Cobertura: `PosApiTest` (tarjeta mayor al total) y `TransactionWriteApiTest` (abono mayor con tarjeta + cambio de un abono en efectivo). | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A6):** borrar una orden de servicio revierte sus efectos. `DeleteServiceOrderAction` solo borraba la orden y su venta, dejando el stock consumido y la deuda del cliente intactos (hallazgo 13); ahora devuelve el stock de las refacciones (`restoreStock`) y cancela la deuda generada por el alta (`cancelDebt` → `credito_por_cancelacion`), la misma reversión que al cancelar la O.S. El borrado masivo de la web pasa por la misma acción (antes hacía un `delete` masivo crudo). Los abonos ya cobrados no se reembolsan. Cobertura: caso nuevo en `ServiceOrderWriteApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (B1):** el logo de la plantilla viaja dentro del payload ESC/POS. `POST /print/bluetooth-payload` devolvía solo texto (los elementos `image`/`local_image` se ignoraban en `buildEscPosRawText`), así que el ticket salía sin logo aunque el respaldo HTML sí lo incluyera (hallazgo 35). Nuevo `App\Services\Printing\EscPosImageRasterizer`: descarga la imagen en el servidor, la escala al ancho del papel (384/576 puntos), la centra y la convierte a mono 1 bit dentro de un comando `GS v 0` en la posición de la plantilla. Si la imagen no se puede leer, el ticket se genera sin logo y se registra un aviso. El camino del plugin de escritorio (`/print/payload`) no cambia. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se
