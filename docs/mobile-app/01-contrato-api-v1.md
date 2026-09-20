@@ -1369,7 +1369,7 @@ Notas Android:
 ### `POST /print/payload` — ✅ implementado (Fase 4) (etiquetas / TSPL)
 Mismos campos que `bluetooth-payload` + `offset_x`, `offset_y` opcionales.
 ```json
-{ "operations": [/* operaciones de la plantilla */], "unsupported_operations": [], "paperWidth": "80mm", "feedLines": 3 }
+{ "operations": [/* operaciones de la plantilla */], "unsupported_operations": [], "warnings": [], "paperWidth": "80mm", "feedLines": 3 }
 ```
 Se usa para impresoras de **etiquetas** (TSPL), no para tickets de venta.
 
@@ -1382,6 +1382,14 @@ listo (igual que el `EscribirTexto` del resto de la etiqueta).
 `"Image: https://…/logo.png"` cuando la imagen no se puede descargar o no es válida). La etiqueta se
 devuelve igual, sin ese elemento, para que el cliente pueda avisar («esta etiqueta sale incompleta»)
 en vez de imprimir en silencio. Va **vacía** cuando todo se resolvió.
+
+**Código de barras vacío:** si el valor de un elemento `barcode` se resuelve a cadena vacía (la
+plantilla usa una variable que ese documento no tiene, o el producto no tiene SKU), el servidor
+**rellena** el código con el identificador del documento (`products.sku` y, si no hay, `P-<id>`;
+`folio` de la venta o de la orden de servicio; `C-<id>` de un cliente) y lo declara en `warnings`
+(una frase en español por cada ajuste, p. ej.
+`"Barcode: la plantilla no resolvió un valor, se usó «P-42»."`). Un `BARCODE …,2,2,""` nunca se envía.
+La misma reserva se aplica al `barcode` de un ticket ESC/POS.
 
 ### `POST /print/ticket-html` — ✅ implementado (Fase 4) (respaldo)
 ```json
@@ -1967,6 +1975,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P1 de la app móvil (B2):** las etiquetas con imagen se imprimen completas desde un cliente ligero. `POST /print/payload` (TSPL) ignoraba los elementos `image`/`local_image` —y en la plantilla de la app llegaba la operación `DescargarImagenDeInternetEImprimir`, que es del plugin de escritorio y el teléfono no puede ejecutar (hallazgos 18 y pendiente 2)—. Ahora el servidor rasteriza la imagen a 1 bit (`MonochromeBitmap`) y la inserta en el mismo texto TSPL como `BITMAP x,y,ancho_en_bytes,alto,0,<hex>` limitada al ancho de la etiqueta. Si la imagen no se puede resolver, la etiqueta se devuelve sin ella y la respuesta lo declara en el campo nuevo `unsupported_operations` (`"Image: <url>"`). `PrintEncoderService::encodeWithReport()` expone el reporte y `encode()` sigue igual para el resto de llamadores. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (D1):** `GET /subscription` incluye `history[].payment.id`, el id que exige `POST /subscription/payments/{paymentId}/request-invoice`. Sin él la app no podía solicitar la factura de un pago desde el teléfono (`[live] … puedeFactura=true idPago=null`, hallazgo 24). Cobertura: caso nuevo en `AccountApiTest` que además usa ese id contra el endpoint de factura. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (D5):** nuevo `GET /service-orders/custom-fields` (`services.orders.access`) que devuelve las definiciones de campos personalizados del módulo (`module = service_orders`, misma forma que `custom_field_definitions` del detalle). Antes solo viajaban en `GET /service-orders/{id}`, así que la app podía capturarlos al **editar** pero no al **crear** (hallazgo 14); el constructor de definiciones de `ServiceOrderReadService` se hizo reutilizable. Cobertura: dos casos nuevos en `ServiceOrderApiTest` (lista filtrada por módulo y suscripción + permiso requerido). | 4 ✅ |
+| 2026-09-20 | **Correcciones P2 de la app móvil (B6):** la etiqueta ya no sale con el código de barras vacío (`BARCODE …,2,2,""`, el caso real de la plantilla de prueba; hallazgo 19). Si el valor del `barcode` se resuelve a cadena vacía, el servidor rellena con el identificador del documento (`products.sku`, o `P-<id>`; `folio` de la venta/orden; `C-<id>` de un cliente) y lo declara en el campo nuevo `warnings` de `/print/payload`. La misma reserva se aplica al `barcode` de un ticket ESC/POS. Cobertura: dos casos nuevos en `PrintingApiTest` (relleno + aviso y valor real sin aviso). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

@@ -92,6 +92,7 @@ class PrintController extends Controller
         return response()->json([
             'operations' => $encoded['operations'],
             'unsupported_operations' => $encoded['unsupported_operations'],
+            'warnings' => $encoded['warnings'],
             'paperWidth' => $this->paperWidth($template),
             'feedLines' => $template->content['config']['feedLines'] ?? 0,
         ]);

@@ -646,4 +646,74 @@ class PrintingApiTest extends TestCase
 
         $this->assertStringContainsString('Etiqueta', $response->json('operations.0.argumentos.0'));
     }
+
+    /**
+     * A barcode that the template resolves to nothing would be printed empty
+     * (BARCODE …,2,2,""): the server falls back to the code of the document and
+     * tells the client (hallazgo 19).
+     */
+    #[Test]
+    public function it_fills_the_label_barcode_when_the_template_resolves_no_value(): void
+    {
+        $product = Product::factory()->create([
+            'branch_id' => $this->branch->id,
+            'sku' => null,
+        ]);
+
+        $response = $this->withToken($this->token)->postJson('/api/v1/print/payload', [
+            'template_id' => $this->barcodeLabelTemplate('{{p.codigo_barras}}')->id,
+            'data_source_type' => 'product',
+            'data_source_id' => $product->id,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('warnings.0', 'Barcode: la plantilla no resolvió un valor, se usó «P-' . $product->id . '».');
+
+        $this->assertMatchesRegularExpression(
+            '/BARCODE [\d.]+,[\d.]+,"128",30,1,0,2,2,"P-' . $product->id . '"/',
+            $response->json('operations.0.argumentos.0')
+        );
+    }
+
+    /**
+     * When the template does resolve a value, that value is the one printed and
+     * nothing is reported.
+     */
+    #[Test]
+    public function it_keeps_the_barcode_value_the_template_resolves(): void
+    {
+        $product = Product::factory()->create([
+            'branch_id' => $this->branch->id,
+            'sku' => '75012345678',
+        ]);
+
+        $response = $this->withToken($this->token)->postJson('/api/v1/print/payload', [
+            'template_id' => $this->barcodeLabelTemplate('{{p.sku}}')->id,
+            'data_source_type' => 'product',
+            'data_source_id' => $product->id,
+        ]);
+
+        $response->assertOk()->assertJsonPath('warnings', []);
+
+        $this->assertStringContainsString('"75012345678"', $response->json('operations.0.argumentos.0'));
+    }
+
+    /**
+     * Label with a single barcode whose value is the given placeholder.
+     */
+    private function barcodeLabelTemplate(string $value): PrintTemplate
+    {
+        return PrintTemplate::factory()->create([
+            'subscription_id' => $this->subscription->id,
+            'name' => 'Etiqueta con código',
+            'type' => TemplateType::LABEL,
+            'context_type' => TemplateContextType::PRODUCT->value,
+            'content' => [
+                'config' => ['width' => 50, 'height' => 30, 'gap' => 2, 'dpi' => 203, 'feedLines' => 2],
+                'elements' => [
+                    ['type' => 'barcode', 'data' => ['type' => '128', 'value' => $value, 'height' => 30, 'x' => 2, 'y' => 2]],
+                ],
+            ],
+        ]);
+    }
 }

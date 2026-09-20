@@ -40,6 +40,7 @@ class PrintEncoderService
     public static function encodeWithReport(PrintTemplate $template, $dataSource, array $options = []): array
     {
         $unsupported = [];
+        $warnings = [];
 
         // 1. Ticket de Venta / Orden de Servicio / CLIENTE
         if (
@@ -50,12 +51,16 @@ class PrintEncoderService
         }
         // 2. Etiqueta (Producto / OS)
         elseif ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
-            $operations = self::encodeTspl($template, $dataSource, $options, $unsupported);
+            $operations = self::encodeTspl($template, $dataSource, $options, $unsupported, $warnings);
         } else {
             $operations = [];
         }
 
-        return ['operations' => $operations, 'unsupported_operations' => $unsupported];
+        return [
+            'operations' => $operations,
+            'unsupported_operations' => $unsupported,
+            'warnings' => $warnings,
+        ];
     }
 
     /**
@@ -162,7 +167,7 @@ class PrintEncoderService
     /**
      * Codifica una plantilla de Etiqueta (TSPL)
      */
-    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = [], array &$unsupported = []): array
+    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = [], array &$unsupported = [], array &$warnings = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
@@ -205,6 +210,19 @@ class PrintEncoderService
                     $barcodeType = $element['data']['type'];
                     $height = $element['data']['height'];
                     $value = self::replacePlaceholders($element['data']['value'], $dataSource);
+
+                    // A barcode with no value is printed empty: fall back to the
+                    // code of the document and tell the client about it.
+                    if (trim($value) === '') {
+                        $value = self::barcodeFallback($dataSource);
+
+                        if ($value === '') {
+                            break;
+                        }
+
+                        $warnings[] = "Barcode: la plantilla no resolvió un valor, se usó «{$value}».";
+                    }
+
                     $tspl .= "BARCODE {$x},{$y},\"{$barcodeType}\",{$height},1,{$rotation},2,2,\"{$value}\"\n";
                     break;
                 case 'qr':
@@ -333,6 +351,16 @@ class PrintEncoderService
                     break;
                 case 'barcode':
                     $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);
+
+                    // Never print an empty barcode (see barcodeFallback).
+                    if (trim($barcodeData) === '') {
+                        $barcodeData = self::barcodeFallback($dataSource);
+
+                        if ($barcodeData === '') {
+                            break;
+                        }
+                    }
+
                     $height = $element['data']['height'] ?? 80;
                     $height = max(1, min(255, (int)$height));
                     $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n";
@@ -428,6 +456,24 @@ class PrintEncoderService
             '{{cliente.rfc}}' => '',
             '{{cliente.direccion}}' => '',
         ];
+    }
+
+    /**
+     * Code to print when the template could not resolve the value of a barcode:
+     * an empty barcode is worse than a code the client can use to look the
+     * document up (hallazgo 19).
+     */
+    private static function barcodeFallback($dataSource): string
+    {
+        return match (true) {
+            // The products table has no barcode column: the SKU is the code of
+            // the product, and the id is the last resort.
+            $dataSource instanceof Product => (string) ($dataSource->sku ?: 'P-' . $dataSource->id),
+            $dataSource instanceof ServiceOrder => (string) $dataSource->folio,
+            $dataSource instanceof Transaction => (string) $dataSource->folio,
+            $dataSource instanceof Customer => 'C-' . $dataSource->id,
+            default => '',
+        };
     }
 
     private static function getVendedorReplacements(?User $user): array
