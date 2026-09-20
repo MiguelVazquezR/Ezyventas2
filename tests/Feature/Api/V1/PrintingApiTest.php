@@ -564,4 +564,86 @@ class PrintingApiTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors(['context.1' => 'El contexto de impresión no es válido.']);
     }
+
+    /**
+     * A label with an image must come ready for a light client: the server
+     * rasterizes the image into the TSPL text (hallazgo 18).
+     */
+    #[Test]
+    public function it_embeds_the_label_image_as_a_tspl_bitmap(): void
+    {
+        $logoUrl = 'https://ezyventas.test/storage/logo.png';
+
+        Http::fake([$logoUrl => Http::response($this->logoBytes(), 200, ['Content-Type' => 'image/png'])]);
+
+        $label = PrintTemplate::factory()->create([
+            'subscription_id' => $this->subscription->id,
+            'name' => 'Etiqueta con logo',
+            'type' => TemplateType::LABEL,
+            'context_type' => TemplateContextType::PRODUCT->value,
+            'content' => [
+                'config' => ['width' => 50, 'height' => 30, 'gap' => 2, 'dpi' => 203, 'feedLines' => 2],
+                'elements' => [
+                    ['type' => 'local_image', 'data' => ['url' => $logoUrl, 'x' => 2, 'y' => 2]],
+                    ['type' => 'text', 'data' => ['value' => 'Etiqueta', 'x' => 2, 'y' => 20]],
+                ],
+            ],
+        ]);
+
+        $response = $this->withToken($this->token)->postJson('/api/v1/print/payload', [
+            'template_id' => $label->id,
+            'data_source_type' => 'product',
+            'data_source_id' => Product::factory()->create(['branch_id' => $this->branch->id])->id,
+        ]);
+
+        $response->assertOk()->assertJsonPath('unsupported_operations', []);
+
+        $tspl = $response->json('operations.0.argumentos.0');
+
+        // BITMAP x,y,bytes per row,height,mode,data (the logo is 120x40 dots).
+        $this->assertMatchesRegularExpression('/BITMAP \d+,\d+,15,40,0,[0-9a-fA-F]+/', $tspl);
+        $this->assertStringNotContainsString('DescargarImagenDeInternetEImprimir', $tspl);
+        $this->assertStringContainsString('Etiqueta', $tspl);
+
+        preg_match('/BITMAP \d+,\d+,(\d+),(\d+),0,([0-9a-fA-F]+)/', $tspl, $matches);
+        // 15 bytes per row * 40 rows * 2 hex chars = 1200 characters of data.
+        $this->assertSame(1200, strlen($matches[3]));
+    }
+
+    /**
+     * When an image cannot be resolved the label still prints, and the response
+     * says what was left out so no client tries the impossible.
+     */
+    #[Test]
+    public function it_reports_the_label_operations_a_light_client_cannot_print(): void
+    {
+        $logoUrl = 'https://ezyventas.test/storage/roto.png';
+
+        Http::fake([$logoUrl => Http::response('esto no es una imagen', 200)]);
+
+        $label = PrintTemplate::factory()->create([
+            'subscription_id' => $this->subscription->id,
+            'name' => 'Etiqueta con imagen rota',
+            'type' => TemplateType::LABEL,
+            'context_type' => TemplateContextType::PRODUCT->value,
+            'content' => [
+                'config' => ['width' => 50, 'height' => 30, 'gap' => 2, 'dpi' => 203, 'feedLines' => 2],
+                'elements' => [
+                    ['type' => 'local_image', 'data' => ['url' => $logoUrl, 'x' => 2, 'y' => 2]],
+                    ['type' => 'text', 'data' => ['value' => 'Etiqueta', 'x' => 2, 'y' => 20]],
+                ],
+            ],
+        ]);
+
+        $response = $this->withToken($this->token)->postJson('/api/v1/print/payload', [
+            'template_id' => $label->id,
+            'data_source_type' => 'product',
+            'data_source_id' => Product::factory()->create(['branch_id' => $this->branch->id])->id,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('unsupported_operations.0', 'Image: ' . $logoUrl);
+
+        $this->assertStringContainsString('Etiqueta', $response->json('operations.0.argumentos.0'));
+    }
 }

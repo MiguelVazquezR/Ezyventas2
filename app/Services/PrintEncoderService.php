@@ -14,30 +14,48 @@ use App\Models\Subscription;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\Printing\EscPosImageRasterizer;
+use App\Services\Printing\TsplImageRasterizer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class PrintEncoderService
 {
     /**
-     * Actúa como un enrutador para llamar al codificador correcto según el tipo de plantilla y la fuente de datos.
+     * Codifica la plantilla con el codificador que le toca.
+     *
+     * @return array<int, array<string, mixed>>  operations ready to print
      */
     public static function encode(PrintTemplate $template, $dataSource, array $options = []): array
     {
+        return self::encodeWithReport($template, $dataSource, $options)['operations'];
+    }
+
+    /**
+     * Operations of a template plus the ones a light client cannot resolve (an
+     * image the server could not rasterize, for example), so the client can warn
+     * instead of printing an incomplete document.
+     *
+     * @return array{operations: array<int, array<string, mixed>>, unsupported_operations: array<int, string>}
+     */
+    public static function encodeWithReport(PrintTemplate $template, $dataSource, array $options = []): array
+    {
+        $unsupported = [];
+
         // 1. Ticket de Venta / Orden de Servicio / CLIENTE
         if (
             $template->type === TemplateType::SALE_TICKET &&
             ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder || $dataSource instanceof Customer)
         ) {
-            return self::encodeEscPos($template, $dataSource, $options);
+            $operations = self::encodeEscPos($template, $dataSource, $options);
         }
-
         // 2. Etiqueta (Producto / OS)
-        if ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
-            return self::encodeTspl($template, $dataSource, $options);
+        elseif ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
+            $operations = self::encodeTspl($template, $dataSource, $options, $unsupported);
+        } else {
+            $operations = [];
         }
 
-        return [];
+        return ['operations' => $operations, 'unsupported_operations' => $unsupported];
     }
 
     /**
@@ -144,7 +162,7 @@ class PrintEncoderService
     /**
      * Codifica una plantilla de Etiqueta (TSPL)
      */
-    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
+    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = [], array &$unsupported = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
@@ -193,6 +211,31 @@ class PrintEncoderService
                     $magnification = $element['data']['magnification'];
                     $value = self::replacePlaceholders($element['data']['value'], $dataSource);
                     $tspl .= "QRCODE {$x},{$y},L,{$magnification},A,{$rotation},M2,\"{$value}\"\n";
+                    break;
+                case 'image':
+                case 'local_image':
+                    // The label printer needs the image already rasterized: the
+                    // server downloads it and sends it as a TSPL BITMAP, so a
+                    // light client prints the whole label.
+                    $url = $element['data']['url'] ?? null;
+
+                    if (!$url) {
+                        break;
+                    }
+
+                    $bitmap = TsplImageRasterizer::command(
+                        (string) $url,
+                        (int) round(($config['width'] ?? 50) * $dotsPerMm),
+                        (int) $x,
+                        (int) $y,
+                    );
+
+                    if ($bitmap === null) {
+                        $unsupported[] = 'Image: ' . $url;
+                        break;
+                    }
+
+                    $tspl .= $bitmap . "\n";
                     break;
             }
         }

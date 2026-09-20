@@ -1351,9 +1351,19 @@ Notas Android:
 ### `POST /print/payload` — ✅ implementado (Fase 4) (etiquetas / TSPL)
 Mismos campos que `bluetooth-payload` + `offset_x`, `offset_y` opcionales.
 ```json
-{ "operations": [/* operaciones de la plantilla */], "paperWidth": "80mm", "feedLines": 3 }
+{ "operations": [/* operaciones de la plantilla */], "unsupported_operations": [], "paperWidth": "80mm", "feedLines": 3 }
 ```
 Se usa para impresoras de **etiquetas** (TSPL), no para tickets de venta.
+
+**Imágenes de la etiqueta:** el servidor las **descarga y las rasteriza a 1 bit**, y las inserta en
+el mismo texto TSPL como `BITMAP x,y,ancho_en_bytes,alto,0,<datos en hex>`, limitadas al ancho de la
+etiqueta (`config.width` mm × DPI). El teléfono **no** rasteriza ni descarga nada: recibe el texto
+listo (igual que el `EscribirTexto` del resto de la etiqueta).
+
+`unsupported_operations` es una lista con lo que el servidor **no** pudo resolver (p. ej.
+`"Image: https://…/logo.png"` cuando la imagen no se puede descargar o no es válida). La etiqueta se
+devuelve igual, sin ese elemento, para que el cliente pueda avisar («esta etiqueta sale incompleta»)
+en vez de imprimir en silencio. Va **vacía** cuando todo se resolvió.
 
 ### `POST /print/ticket-html` — ✅ implementado (Fase 4) (respaldo)
 ```json
@@ -1932,6 +1942,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P1 de la app móvil (B1):** el logo de la plantilla viaja dentro del payload ESC/POS. `POST /print/bluetooth-payload` devolvía solo texto (los elementos `image`/`local_image` se ignoraban en `buildEscPosRawText`), así que el ticket salía sin logo aunque el respaldo HTML sí lo incluyera (hallazgo 35). Nuevo `App\Services\Printing\EscPosImageRasterizer`: descarga la imagen en el servidor, la escala al ancho del papel (384/576 puntos), la centra y la convierte a mono 1 bit dentro de un comando `GS v 0` en la posición de la plantilla. Si la imagen no se puede leer, el ticket se genera sin logo y se registra un aviso. El camino del plugin de escritorio (`/print/payload`) no cambia. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B3):** `POST /print/whatsapp-ticket` arma el ticket de una **orden de servicio**. Antes resolvía el origen con `PrintDataSourceResolver` y, si no era una `Transaction`, respondía `200` con `ticket: null` (`customer_phone: null`), así que la app creía que había enviado algo cuando no tenía nada que mandar (hallazgo 16: `[live] WhatsApp service_order=3 ticket=null`). Nuevo `WhatsAppTicketService::buildServiceOrderPayload()` (`kind: service_order`: folio, estatus, equipo, refacciones, anticipos, saldo y fecha prometida) y, para un origen que no puede producir ticket (`product`, `customer`), `422` con `code: no_whatsapp_ticket` en vez de un `null` silencioso. El `kind` documenta que depende del documento resuelto. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B4):** `GET /print/templates` acepta **varios contextos** a la vez (`?context[]=pos&context[]=general` o `?context=pos,general`), que es lo que necesita la web (pide `pos`+`general`, `transaction`+`general`, …). Antes aceptaba uno solo, así que `?context=pos` devolvía la lista vacía con suscripciones cuyas plantillas de ticket son `general`. Un solo contexto y `?type=` siguen comportándose igual; un contexto desconocido responde `422` con `errors.context.N`. Cobertura: caso nuevo en `PrintingApiTest` (array, coma, un solo contexto, `type` y contexto inválido). | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (B2):** las etiquetas con imagen se imprimen completas desde un cliente ligero. `POST /print/payload` (TSPL) ignoraba los elementos `image`/`local_image` —y en la plantilla de la app llegaba la operación `DescargarImagenDeInternetEImprimir`, que es del plugin de escritorio y el teléfono no puede ejecutar (hallazgos 18 y pendiente 2)—. Ahora el servidor rasteriza la imagen a 1 bit (`MonochromeBitmap`) y la inserta en el mismo texto TSPL como `BITMAP x,y,ancho_en_bytes,alto,0,<hex>` limitada al ancho de la etiqueta. Si la imagen no se puede resolver, la etiqueta se devuelve sin ella y la respuesta lo declara en el campo nuevo `unsupported_operations` (`"Image: <url>"`). `PrintEncoderService::encodeWithReport()` expone el reporte y `encode()` sigue igual para el resto de llamadores. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

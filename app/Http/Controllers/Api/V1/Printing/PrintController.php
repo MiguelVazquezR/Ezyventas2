@@ -80,12 +80,18 @@ class PrintController extends Controller
     {
         $template = $this->findTemplateOrFail((int) $request->validated('template_id'), $request->user());
 
+        // The report tells the client what the server could not resolve (an
+        // image that could not be rasterized), so it can warn instead of
+        // printing an incomplete label.
+        $encoded = PrintEncoderService::encodeWithReport(
+            $template,
+            $this->resolveSource($request),
+            $request->options()
+        );
+
         return response()->json([
-            'operations' => PrintEncoderService::encode(
-                $template,
-                $this->resolveSource($request),
-                $request->options()
-            ),
+            'operations' => $encoded['operations'],
+            'unsupported_operations' => $encoded['unsupported_operations'],
             'paperWidth' => $this->paperWidth($template),
             'feedLines' => $template->content['config']['feedLines'] ?? 0,
         ]);
