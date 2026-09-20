@@ -952,14 +952,22 @@ Response `200`:
 
 ### `PUT /transactions/{id}/payments/{paymentId}` — ✅ implementado (Fase 4)
 Permiso: `transactions.edit_payment`. Body: `{ amount, payment_method, bank_account_id, notes }`.
-Concilia el saldo de la cuenta bancaria (revierte el efecto anterior y aplica el nuevo).
+Concilia el saldo de la cuenta bancaria **y el saldo del cliente** (revierte el efecto anterior y
+aplica el nuevo).
 `amount` mínimo `0.01`; `bank_account_id` obligatorio para `tarjeta`/`transferencia`.
 Response `200`: `{ "message": "Pago actualizado correctamente.", "payment": { … }, "transaction": { … } }`.
 Lógica en `TransactionPaymentEditService` (compartida con la web).
 
 ### `DELETE /transactions/{id}/payments/{paymentId}` — ✅ implementado (Fase 4)
-Permiso: `transactions.edit_payment`. Elimina el pago y ajusta el saldo bancario, el saldo a favor
-del cliente y el movimiento de caja. Response `204`.
+Permiso: `transactions.edit_payment`. Elimina el pago y revierte **todos** sus efectos: el saldo
+bancario, el saldo del cliente y el movimiento de caja del turno. Response `204`.
+
+> **Saldo del cliente (`customers.balance`):** editar o borrar un pago revierte su movimiento de
+> saldo una sola vez y con el movimiento simétrico del que escribió al crearse: un abono cubrió deuda
+> (`payDebt` → se revierte con `addDebt`) y un pago hecho con saldo a favor la consumió
+> (`useBalance` → se revierte con `addRefund`). Si la venta queda parcialmente pagada vuelve a
+> `pendiente` (o `apartado` si tiene fecha límite). Así la cadena apartado → abono → edición →
+> borrado → cancelación con reembolso deja `customers.balance` en el valor con el que empezó.
 
 ### Endpoints fuera del alcance móvil (por ahora)
 `POST /transactions/{id}/exchange`, `/exchange-layaway`, `/reschedule-order`,
@@ -1822,6 +1830,7 @@ php artisan route:list --path=api
 | 2026-09-18 | **Fase 2 implementada:** `GET /transactions`, `GET /transactions/{id}`, `GET /service-orders`, `GET /service-orders/{id}`, `PATCH /service-orders/{id}/status` (reutiliza `ChangeServiceOrderStatusAction`) y `POST /service-orders/{id}/diagnosis` (multipart con evidencias). Lógica nueva en `App\Services\Transactions\TransactionReadService`, `App\Services\ServiceOrders\ServiceOrderReadService` y `App\Actions\ServiceOrders\SaveServiceOrderDiagnosisAction` (esta última también la usa la web, así que el diagnóstico se guarda igual desde ambos clientes). Aclaraciones: `items_count` = líneas de la venta; `invoice` solo `{id, folio, status}`; `thumb_url` cae al original si no hay conversión; `activities` = últimos 20 por id desc; el diagnóstico **no** se borra si no se envía; el estatus inválido o repetido responde `422` con `errors.status[0]`. Cobertura: `tests/Feature/Api/V1/TransactionApiTest.php` y `ServiceOrderApiTest.php`. | 2 ✅ |
 | 2026-09-18 | **Fase 3 implementada (escrituras):** abrir caja (`POST /cash-register-sessions`) y unirse (`/join`), cobro (`POST /pos/checkout`), apartado (`/pos/layaway`), pedido (`/pos/store-order`), abonos (`POST /transactions/{id}/payments`), cancelación y reembolso (`/cancel`, `/refund`), alta y edición de órdenes de servicio (`POST`/`PUT /service-orders`), reparación de órdenes antiguas (`/ensure-transaction`) y anticipos (`POST /service-orders/{id}/payments`). Para no duplicar lógica se extrajeron tres piezas que ahora **comparten web y app**: `CashRegisterSessionOpenService`, `TransactionCancellationService` y `CreateStoreOrderAction` (además de reutilizar `TransactionPaymentService`, `CreateServiceOrderAction`, `UpdateServiceOrderAction` y `EnsureServiceOrderTransactionAction`). Nuevos códigos de negocio devueltos en `code`: `session_required`, `customer_required`, `credit_limit_exceeded`, `already_cancelled`, `cash_register_in_use`, `session_already_open`, `session_not_open`, `no_cash_register_available`. Correcciones: el reembolso por transferencia no guardaba `payment_date` y fallaba (web incluida); los abonos ahora aceptan `payments: []` cuando `use_balance = true`; el detalle de la venta incluye `phone` del cliente para el ticket de WhatsApp. Cobertura: `PosApiTest`, `TransactionWriteApiTest`, `ServiceOrderWriteApiTest` y los casos nuevos de `CashRegisterSessionApiTest` (93 tests verdes en la carpeta de la API). | 3 ✅ |
 | 2026-09-18 | **Fase 4 implementada (corte de caja, impresión, edición de pagos y cuenta):** `GET /cash-register-sessions/{id}/summary`, `PUT /cash-register-sessions/{id}` (corte), `POST .../leave`, `POST /cash-register-sessions/rejoin-or-start`, `GET /print/templates`, `POST /print/bluetooth-payload`, `POST /print/payload`, `POST /print/ticket-html`, `POST /print/whatsapp-ticket`, `PUT|DELETE /transactions/{id}/payments/{paymentId}`, `DELETE /service-orders/{id}`, `PUT /branch/switch/{branch}`, `GET /notifications`, `GET /support`, `GET|PUT /profile`, `DELETE /profile/photo`, `PUT /profile/password`, `POST /profile/logout-other-devices`, `GET|PUT /subscription`, `POST /subscription/documents` y `POST /subscription/payments/{id}/request-invoice`. Piezas compartidas nuevas (las usa también la web): `CashRegisterSessionLifecycleService` (antes `…OpenService`: open/join/leave/rejoinOrStart/close + broadcast `SessionClosed`), `TransactionPaymentEditService`, `DeleteServiceOrderAction`, `PrintDataSourceResolver`, `WhatsAppTicketService::buildSalePayload()` y `config/support.php`. `GET /auth/me` ahora incluye `available_branches`. Correcciones: la edición de un pago ya no descuadra la cuenta bancaria al cambiar de método, y al quitar un pago la venta vuelve a `apartado` (no a `pendiente`) si tenía fecha límite. Códigos nuevos: `not_session_participant`, `branch_out_of_scope`, `invalid_current_password`, `payment_not_approved`. Cobertura: `CashRegisterCloseApiTest` (11), `PrintingApiTest` (9), `AccountApiTest` (12) y los casos añadidos a `TransactionWriteApiTest` y `ServiceOrderWriteApiTest` (132 tests verdes en la carpeta de la API). | 4 ✅ |
+| 2026-09-20 | **Correcciones P0 de la app móvil (A1):** editar (`PUT`) o borrar (`DELETE`) un pago vuelve a conciliar `customers.balance`: revierte el movimiento simétrico que el pago escribió al crearse (`payDebt` ↔ `addDebt`, `useBalance` ↔ `addRefund`) y, en la edición, aplica el del nuevo monto/método. La cadena apartado → abono → edición → borrado → cancelación con reembolso en efectivo deja el saldo del cliente en `0.00` (antes quedaba el importe del pago borrado a favor). Cobertura: `tests/Feature/Api/V1/TransactionPaymentReversalApiTest.php`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

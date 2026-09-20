@@ -2,6 +2,7 @@
 
 namespace App\Services\Transactions;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\SessionCashMovementType;
@@ -49,6 +50,16 @@ class TransactionPaymentEditService
                 BankAccount::find($oldBankAccountId)?->decrement('balance', $oldAmount);
             }
 
+            // 2. Reverse the effect the previous payment left in the customer:
+            //    an abono settled debt and a payment with balance consumed
+            //    credit, so reconciling only the bank keeps a wrong balance.
+            $this->revertCustomerBalance(
+                $transaction,
+                $oldMethod,
+                $oldAmount,
+                "Reversión por edición de pago en venta #{$transaction->folio}"
+            );
+
             $payment->update([
                 'amount' => $data['amount'],
                 'payment_method' => $method,
@@ -56,10 +67,18 @@ class TransactionPaymentEditService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            // 2. Apply the bank effect of the new payment.
+            // 3. Apply the bank effect of the new payment.
             if ($bankAccountId && $this->movesMoney($method)) {
                 BankAccount::find($bankAccountId)?->increment('balance', (float) $data['amount']);
             }
+
+            // 4. And the effect of the new payment on the customer balance.
+            $this->applyCustomerBalance(
+                $transaction,
+                $method,
+                (float) $data['amount'],
+                "Pago actualizado en venta #{$transaction->folio}"
+            );
 
             $this->syncTransactionStatus($transaction);
         });
@@ -82,14 +101,15 @@ class TransactionPaymentEditService
                 BankAccount::find($payment->bank_account_id)?->decrement('balance', (float) $payment->amount);
             }
 
-            // 2. Balance used as payment: the customer gets it back.
-            if ($method === PaymentMethod::BALANCE->value && $transaction->customer_id) {
-                $transaction->customer?->addRefund(
-                    (float) $payment->amount,
-                    $transaction->id,
-                    "Reversión por eliminación de pago en venta #{$transaction->folio}"
-                );
-            }
+            // 2. Customer balance: an abono took debt away (payDebt) and a
+            //    payment with balance consumed credit (useBalance). Both come
+            //    back with their symmetric movement, once and only once.
+            $this->revertCustomerBalance(
+                $transaction,
+                $method,
+                (float) $payment->amount,
+                "Reversión por eliminación de pago en venta #{$transaction->folio}"
+            );
 
             // 3. Cash of the drawer: remove the income movement of this sale.
             if ($method === PaymentMethod::CASH->value && $payment->cash_register_session_id) {
@@ -132,6 +152,64 @@ class TransactionPaymentEditService
     private function movesMoney(string $method): bool
     {
         return in_array($method, [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value], true);
+    }
+
+    /**
+     * Removes from `customers.balance` the effect the payment wrote.
+     *
+     * A payment of an abono settled debt with `payDebt` and one made with the
+     * available balance consumed credit with `useBalance`; reverting each one
+     * with its symmetric movement keeps the balance exactly as it was before
+     * the payment, without duplicating the reversal.
+     */
+    private function revertCustomerBalance(Transaction $transaction, string $method, float $amount, string $notes): void
+    {
+        $customer = $transaction->customer;
+
+        // Refund records are negative on purpose: nothing was settled with them.
+        if (!$customer || $amount <= 0) {
+            return;
+        }
+
+        if ($method === PaymentMethod::BALANCE->value) {
+            $customer->addRefund($amount, $transaction->id, $notes);
+
+            return;
+        }
+
+        $customer->addDebt($amount, $this->debtTypeFor($transaction), $transaction->id, $notes);
+    }
+
+    /**
+     * Writes in the customer the effect the (already saved) payment would have
+     * written when it was created.
+     */
+    private function applyCustomerBalance(Transaction $transaction, string $method, float $amount, string $notes): void
+    {
+        $customer = $transaction->customer;
+
+        if (!$customer || $amount <= 0) {
+            return;
+        }
+
+        if ($method === PaymentMethod::BALANCE->value) {
+            $customer->useBalance($amount, $transaction->id, $notes);
+
+            return;
+        }
+
+        $customer->payDebt($amount, $transaction->id, $notes);
+    }
+
+    /**
+     * Debt type of the sale, so the reversal lands in the same bucket the sale
+     * used when it posted the debt (layaway or credit sale).
+     */
+    private function debtTypeFor(Transaction $transaction): CustomerBalanceMovementType
+    {
+        return $transaction->layaway_expiration_date
+            ? CustomerBalanceMovementType::LAYAWAY_DEBT
+            : CustomerBalanceMovementType::CREDIT_SALE;
     }
 
     private function transactionTotal(Transaction $transaction): float
