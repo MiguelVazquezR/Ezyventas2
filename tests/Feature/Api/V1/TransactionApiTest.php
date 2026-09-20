@@ -234,4 +234,45 @@ class TransactionApiTest extends TestCase
             ->assertStatus(401)
             ->assertJsonPath('message', 'No autenticado.');
     }
+
+    /**
+     * A voided sale (cancelled or refunded) no longer owes anything: the
+     * pending balance of the list and the detail must say the same.
+     */
+    #[Test]
+    public function it_reports_no_pending_balance_for_a_voided_sale(): void
+    {
+        $owner = $this->ownerUser();
+        $token = $this->tokenFor($owner);
+
+        $cancelled = $this->sale(['folio' => 'V-005', 'status' => TransactionStatus::CANCELLED]);
+        $refunded = $this->sale(['folio' => 'V-006', 'status' => TransactionStatus::REFUNDED]);
+        $pending = $this->sale(['folio' => 'V-007', 'status' => TransactionStatus::PENDING]);
+
+        foreach ([$cancelled, $refunded] as $sale) {
+            $this->withToken($token)
+                ->getJson('/api/v1/transactions/' . $sale->id)
+                ->assertOk()
+                ->assertJsonPath('status', $sale->folio === 'V-005' ? 'cancelado' : 'reembolsado')
+                ->assertJsonPath('total_paid', 100)
+                ->assertJsonPath('remaining_due', 0)
+                ->assertJsonPath('pending_balance', 0)
+                ->assertJsonPath('is_paid', true);
+        }
+
+        // A sale that nobody touched keeps reporting what it owes.
+        $this->withToken($token)
+            ->getJson('/api/v1/transactions/' . $pending->id)
+            ->assertOk()
+            ->assertJsonPath('remaining_due', 170)
+            ->assertJsonPath('is_paid', false);
+
+        $rows = collect(
+            $this->withToken($token)->getJson('/api/v1/transactions')->assertOk()->json('data')
+        )->keyBy('id');
+
+        $this->assertSame(0.0, (float) $rows[$cancelled->id]['remaining_due']);
+        $this->assertSame(0.0, (float) $rows[$refunded->id]['remaining_due']);
+        $this->assertSame(170.0, (float) $rows[$pending->id]['remaining_due']);
+    }
 }

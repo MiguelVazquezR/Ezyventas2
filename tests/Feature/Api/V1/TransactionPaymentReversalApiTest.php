@@ -71,8 +71,8 @@ class TransactionPaymentReversalApiTest extends TestCase
 
         $this->assertCustomerBalance(0.00);
         $this->assertSame(TransactionStatus::REFUNDED, $layaway->fresh()->status);
-        // El saldo pendiente de una venta anulada se corrige en el punto A2.
-        $this->assertEqualsWithDelta(2.00, (float) $layaway->fresh()->total_paid, 0.001);
+        // Una venta reembolsada ya no debe nada (punto A2).
+        $this->assertTotals($layaway, paid: 2.00, due: 0.00);
     }
 
     #[Test]
