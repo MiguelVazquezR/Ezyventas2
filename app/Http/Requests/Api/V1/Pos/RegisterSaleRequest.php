@@ -61,7 +61,7 @@ class RegisterSaleRequest extends FormRequest
             ],
             'payments.*.bank_account_id' => ['nullable', 'integer', 'exists:bank_accounts,id'],
             'payments.*.notes' => ['nullable', 'string', 'max:255'],
-            'use_balance' => ['required', 'boolean'],
+            'use_balance' => ['sometimes', 'boolean'],
             'layaway_expiration_date' => ['nullable', 'date'],
             // Idempotency key of the offline queue (used from phase 5 on).
             'client_uuid' => ['nullable', 'uuid'],
@@ -77,7 +77,6 @@ class RegisterSaleRequest extends FormRequest
             'payments.*.amount.min' => 'El monto de cada pago debe ser mayor que cero.',
             'payments.*.method.in' => 'El método de pago seleccionado no es válido.',
             'total.required' => 'El total de la venta es obligatorio.',
-            'use_balance.required' => 'Indica si el cliente usará su saldo a favor.',
             'client_uuid.uuid' => 'El identificador de la operación no es válido.',
         ];
     }

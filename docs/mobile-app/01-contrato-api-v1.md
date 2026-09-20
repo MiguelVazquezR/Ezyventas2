@@ -684,7 +684,10 @@ Reglas del payload:
   de modo que los tres botones cobran lo mismo.
 - `payments[].method` ∈ `efectivo` | `tarjeta` | `transferencia` | `saldo`;
   `bank_account_id` **obligatorio** para `tarjeta` y `transferencia`.
-- `use_balance: true` solo si hay cliente con saldo a favor; el servidor limita el uso al total.
+- `use_balance` es **opcional**: `true` aplica el saldo a favor del cliente como pago (el servidor lo
+  limita al total de la venta y el ticket de la venta lo refleja); **ausente o `false` no toca
+  `customers.balance`** y el saldo pendiente se registra como deuda del cliente (o `422` si no hay
+  cliente o crédito disponible). El servidor **nunca** gasta el saldo por su cuenta.
 
 Response `201`:
 ```json
@@ -1849,6 +1852,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P0 de la app móvil (A1):** editar (`PUT`) o borrar (`DELETE`) un pago vuelve a conciliar `customers.balance`: revierte el movimiento simétrico que el pago escribió al crearse (`payDebt` ↔ `addDebt`, `useBalance` ↔ `addRefund`) y, en la edición, aplica el del nuevo monto/método. La cadena apartado → abono → edición → borrado → cancelación con reembolso en efectivo deja el saldo del cliente en `0.00` (antes quedaba el importe del pago borrado a favor). Cobertura: `tests/Feature/Api/V1/TransactionPaymentReversalApiTest.php`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A2):** `remaining_due` (y por tanto `pending_balance` e `is_paid`) es **0** en las ventas anuladas (`cancelado` / `reembolsado`): antes una venta reembolsada seguía reportando saldo (`V-005 reembolsado … saldo=$138.00`). La regla se agregó en `Transaction::remainingDue()` (accesor compartido por web, app y reportes), así que no hay dos fórmulas distintas. Cobertura: caso nuevo en `TransactionApiTest` y el cierre del ciclo en `TransactionPaymentReversalApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P0 de la app móvil (A5):** una sola fórmula de totales para venta, apartado y pedido. El servidor **recalcula** `subtotal` desde el carrito (`TransactionPaymentService::cartTotals`: `subtotal = Σ((unit_price + discount) × quantity)`, `total = subtotal - total_discount` + envío) y ese es el importe que se cobra; antes `/pos/store-order` confiaba en el `subtotal` del cliente y el botón de pedido del POS web enviaba el precio **ya descontado**, así que un pedido de $300 con $30 de descuento se registraba en $240. Se corrigió también el POS web (`Index.vue` / `IndexMobile.vue`: el subtotal usa precios de lista y el total resta el descuento) y el ejemplo de §7 (`subtotal: 300`), más la nota de `line_total`/`discount_amount` por unidad. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
+| 2026-09-20 | **Correcciones P0 de la app móvil (A3):** el saldo a favor **solo** se aplica cuando el request lo pide (`use_balance: true`). `handleNewSale` forzaba el cobro del saldo del cliente cuando la venta quedaba con deuda (bloque «COBRO AUTOMÁTICO DE SALDO»), así que un apartado de $140 de un cliente con $1 a favor consumía ese peso sin que el request lo pidiera y sin reflejarlo el cajero. Ahora `use_balance` es opcional (`ausente` = `false`) y el saldo no gastado queda como deuda del cliente. Cobertura: dos casos nuevos en `PosApiTest`. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

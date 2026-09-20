@@ -95,28 +95,18 @@ class TransactionPaymentService
                     throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
                 }
 
-                // --- FIX: COBRO AUTOMÁTICO DE SALDO ---
-                // Si aún hay deuda y el cliente tiene saldo a favor, el sistema fuerza
-                // el uso de ese saldo como PAGO antes de generar una deuda real.
-                // Esto genera el registro de "Payment" tipo BALANCE y cuadra la transacción.
-                if ($customer->balance > 0) {
-                    $forcedBalanceToUse = min($remainingDue, (float) $customer->balance);
-                    $this->applyBalanceAsPayment($transaction, $customer, $forcedBalanceToUse, $sessionId, "Cobro automático de saldo a favor por venta #{$transaction->folio}", clone $now);
-                    
-                    $transaction->refresh();
-                    $remainingDue = $transaction->remaining_due;
+                if ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit) {
+                    throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
                 }
 
-                // Si aún queda deuda después de agotar el saldo a favor, aplicamos la deuda.
-                if ($remainingDue > 0.01) {
-                    if ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit) {
-                        throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
-                    }
-                    $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
-                }
-            } 
+                // The customer balance is only spent when the request asked for
+                // it (`use_balance`, step 3): charging it on its own would take
+                // money the cashier never decided to use and would settle the
+                // sale without a trace in the ticket.
+                $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
+            }
             
-            // 6. Evaluación final: ¿Se pagó completa? (Con pagos, saldo automático, etc.)
+            // 6. Evaluación final: ¿Se pagó completa? (Con pagos, saldo, etc.)
             if ($transaction->fresh()->isFullyPaid()) {
                 $transaction->update(['status' => TransactionStatus::COMPLETED]);
                 if ($initialStatus === TransactionStatus::ON_LAYAWAY) {

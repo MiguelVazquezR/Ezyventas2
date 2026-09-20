@@ -389,4 +389,63 @@ class PosApiTest extends TestCase
             ->assertJsonPath('transaction.total_discount', '30.00')
             ->assertJsonPath('transaction.total', 270);
     }
+
+    /**
+     * Without `use_balance` (or with it in false) the balance of the customer is
+     * never spent: the sale is booked as debt and the credit stays available.
+     */
+    #[Test]
+    public function it_does_not_use_the_customer_balance_when_the_request_does_not_ask_for_it(): void
+    {
+        $this->customer->update(['balance' => 1]);
+
+        $layaway = $this->layawayWithBalanceFlag(false);
+
+        $this->assertEqualsWithDelta(-139.0, (float) $this->customer->fresh()->balance, 0.001);
+        $this->assertEqualsWithDelta(140.0, (float) $layaway->fresh()->remaining_due, 0.001);
+        $this->assertEquals(TransactionStatus::ON_LAYAWAY, $layaway->fresh()->status);
+        $this->assertSame(0, $layaway->payments()->where('payment_method', 'saldo')->count());
+        $this->assertDatabaseMissing('customer_balance_movements', [
+            'transaction_id' => $layaway->id,
+            'type' => 'uso_de_credito',
+        ]);
+    }
+
+    /**
+     * With `use_balance: true` the credit is applied and the ticket of the abono
+     * reports it.
+     */
+    #[Test]
+    public function it_uses_the_customer_balance_when_the_request_asks_for_it(): void
+    {
+        $this->customer->update(['balance' => 1]);
+
+        $layaway = $this->layawayWithBalanceFlag(true);
+
+        $balancePayment = $layaway->payments()->where('payment_method', 'saldo')->first();
+
+        $this->assertNotNull($balancePayment);
+        $this->assertEqualsWithDelta(1.0, (float) $balancePayment->amount, 0.001);
+        $this->assertEqualsWithDelta(139.0, (float) $layaway->fresh()->remaining_due, 0.001);
+        $this->assertEqualsWithDelta(1.0, (float) $layaway->fresh()->total_paid, 0.001);
+    }
+
+    /**
+     * Layaway of 140 of a customer with 1 peso of credit, saying explicitly if
+     * the balance may be used.
+     */
+    private function layawayWithBalanceFlag(bool $useBalance): Transaction
+    {
+        $response = $this->withToken($this->token)->postJson('/api/v1/pos/layaway', $this->salePayload([
+            'cartItems' => [$this->cartItem(['quantity' => 1, 'unit_price' => 140, 'discount' => 0])],
+            'subtotal' => 140,
+            'total_discount' => 0,
+            'total' => 140,
+            'payments' => [],
+            'use_balance' => $useBalance,
+            'layaway_expiration_date' => now()->addWeek()->toDateString(),
+        ]))->assertCreated();
+
+        return Transaction::findOrFail($response->json('transaction.id'));
+    }
 }
