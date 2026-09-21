@@ -954,6 +954,9 @@ Permisos: `transactions.cancel`. Reutiliza la lógica de cancelación extraída 
   - `balance` → **requiere cliente** asignado a la venta.
   - `transfer` → requiere `bank_account_id`.
 - Si ya estaba `cancelado` o `reembolsado` → `422 {"message": "La venta ya se encuentra cancelada o reembolsada."}`
+- **Sin campo de motivo:** no existe `reason`/`notes` en esta ruta (decisión de alcance, ver §13b): la
+  cancelación queda registrada con el usuario, la fecha y el movimiento de dinero. La app usa su propia
+  confirmación explícita (qué pasa con el dinero, cuánto se devuelve, aviso de caja/cliente).
 
 > **Detalles de la implementación (Fase 3):** el stock vuelve a la sucursal (o se libera la reserva
 > si era apartado/pedido) y la deuda del cliente se revierte. `refund_method = cash` exige una
@@ -1689,7 +1692,9 @@ Reglas del servidor:
   (`user->branch->subscription_id !== branch->subscription_id` → `403`).
 - **Excepción:** el usuario `id = 1` (super admin / modo soporte) puede cambiar entre suscripciones.
 - Efecto: actualiza `users.branch_id` del usuario autenticado → **aplica a todos sus dispositivos**
-  y a la web al instante.
+  y a la web al instante. La sucursal **no** es por sesión ni por token (decisión de alcance: no se
+  cambia en esta entrega, ver §13b), así que el aviso de la app («Verás la información de esa sucursal
+  en este dispositivo, igual que en la web») es el comportamiento correcto.
 
 Response `200`:
 ```json
@@ -2033,10 +2038,10 @@ en silencio (y para no inventar pantallas que el backend todavía no puede alime
 | Punto | Estado | Qué hace hoy el servidor |
 |---|---|---|
 | **Corte de caja reimprimible** (B5) | ✅ **implementado** | `GET /cash-register-sessions/{id}/receipt` (§6.3) devuelve el corte de un turno cerrado listo para reimprimir (plantilla del negocio o incorporada) y `data_source_type = cash_register_session` permite imprimirlo con cualquier endpoint de §10. |
-| **`reason` al cancelar una venta** (D7) | **Pendiente de decisión de negocio** | `POST /transactions/{id}/cancel` acepta `action`, `refund_method`, `bank_account_id` y `client_uuid`, **no** un motivo escrito. Si el negocio lo quiere, se agrega `reason`/`notes` (opcional) y se documenta en §8. |
-| **Lista de dispositivos con sesión** (D8) | **Fuera de alcance (a confirmar)** | «Sesiones activas» solo permite **cerrar** las demás (`POST /profile/logout-other-devices`, con contraseña): **no** existe `GET /profile/sessions`. |
-| **Sucursal por sesión** (D6) | **Pendiente de decisión** | `PUT /branch/switch/{id}` escribe `users.branch_id`, así que el cambio es **global**: afecta a la web y a los demás dispositivos del mismo usuario (no solo al teléfono que lo pide). La app ya lo advierte en la confirmación; cambiar a «sucursal por token» es un cambio mayor que depende de esta decisión. |
-| **PDF de la constancia fiscal**, respaldo del ticket en PDF, permisos BLE y modo offline | **Fuera de alcance** | Se resuelven en la app o en la web, no en el backend (ver la sección E del plan de trabajo). |
+| **`reason` al cancelar una venta** (D7) | ⛔ **fuera de alcance (decisión tomada)** | `POST /transactions/{id}/cancel` acepta `action`, `refund_method`, `bank_account_id` y `client_uuid`, **no** un motivo escrito: la cancelación queda con el usuario, la fecha y el movimiento de dinero, sin texto libre. La app muestra su confirmación explícita (qué pasa con el dinero, cuánto se devuelve, aviso de caja/cliente) y **no** manda ningún campo nuevo. |
+| **Lista de dispositivos con sesión** (D8) | ⛔ **fuera de alcance (decisión tomada)** | «Sesiones activas» solo permite **cerrar** las demás (`POST /profile/logout-other-devices`, con contraseña): **no** existe `GET /profile/sessions` y no se va a agregar en esta entrega. |
+| **Sucursal por sesión** (D6) | ⛔ **fuera de alcance (decisión tomada)** | `PUT /branch/switch/{id}` escribe `users.branch_id`, así que el cambio es **global**: afecta a la web y a los demás dispositivos del mismo usuario, no solo al teléfono que lo pide. Se queda así y la app lo advierte en la confirmación («Verás la información de esa sucursal en este dispositivo, igual que en la web»). |
+| **PDF de la constancia fiscal**, respaldo del ticket en PDF, permisos BLE y modo offline | ⛔ **fuera de alcance** | Se resuelven en la app o en la web, no en el backend (ver la sección E del plan de trabajo). |
 
 ## 14. Control de cambios de este contrato
 
@@ -2068,6 +2073,7 @@ en silencio (y para no inventar pantallas que el backend todavía no puede alime
 | 2026-09-20 | **Correcciones P2 de la app móvil (D3):** `GET /notifications` incluye `modules` (hoy `online_store`), para que la app sepa qué contadores **ocultar** en vez de adivinar por qué `pending_orders` siempre viene en `0` cuando la tienda en línea no está contratada (hallazgo 28). Se calcula con `Subscription::getAvailableModuleNames()` (el mismo criterio que `User::getGlobalNotifications()`). Cobertura: caso nuevo en `AccountApiTest` (bandera en `false` y en `true` al contratar el módulo). | 4 ✅ |
 | 2026-09-20 | **Correcciones P2 de la app móvil (D2):** el catálogo §12 incluye `payment_not_approved` ("Solo puedes solicitar facturas de pagos aprobados."), el código con el que se rechaza la factura de un pago que no está aprobado (los `pending`/`rejected` del historial sí traen `id`, pero no son facturables). | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B5):** el corte de caja ya es imprimible. Nuevo `GET /cash-register-sessions/{id}/receipt` (`pos.access`, `template_id` opcional) que devuelve el corte **listo para reimprimir**, incluido el de un turno cerrado hace días: `session`, `summary` (las cifras congeladas del cierre), la plantilla usada y las `operations` (mismo formato que §10). La plantilla se resuelve como `template_id` → plantilla del negocio con contexto `cash_register` (nuevo valor del enum, elegible en la web) → **plantilla incorporada** del servidor (`CashRegisterCutTemplate`, `template.builtin = true`). Además `data_source_type = cash_register_session` entra en `POST /print/bluetooth-payload`, `POST /print/payload` y `POST /print/ticket-html` (`PrintDataSourceResolver`), con las variables nuevas `{{corte.*}}`. Cobertura: dos casos nuevos en `CashRegisterCloseApiTest` (corte cerrado con la plantilla incorporada y corte con la plantilla del negocio, incluido el print por origen). | 4 ✅ |
+| 2026-09-20 | **Cierre de decisiones de alcance (D6, D7, D8):** se quedan **como están** y quedan escritos (§13b) para que ningún cliente los asuma: (D6) `PUT /branch/switch/{id}` sigue siendo **global** (`users.branch_id`, no por sesión/token); (D7) `POST /transactions/{id}/cancel` **no** acepta motivo escrito; (D8) **no** hay `GET /profile/sessions` (solo cerrar las demás con contraseña). Se resumen también en §8 y §11b.1. | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se
