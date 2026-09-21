@@ -35,6 +35,11 @@ Route::get('/cash-register-sessions/{cashRegisterSessionId}/summary', [CashRegis
     ->whereNumber('cashRegisterSessionId')
     ->name('cash-register-sessions.summary');
 
+// The cut ready to reprint, closed shifts included.
+Route::get('/cash-register-sessions/{cashRegisterSessionId}/receipt', [CashRegisterSessionController::class, 'receipt'])
+    ->whereNumber('cashRegisterSessionId')
+    ->name('cash-register-sessions.receipt');
+
 Route::put('/cash-register-sessions/{cashRegisterSessionId}', [CashRegisterSessionController::class, 'close'])
     ->whereNumber('cashRegisterSessionId')
     ->name('cash-register-sessions.close');

@@ -2,6 +2,7 @@
 
 namespace App\Services\Printing;
 
+use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ServiceOrder;
@@ -32,6 +33,7 @@ class PrintDataSourceResolver
         'product',
         'customer',
         'order',
+        'cash_register_session',
         'general',
     ];
 
@@ -49,6 +51,13 @@ class PrintDataSourceResolver
             'transaction', 'pos', 'general', 'order' => Transaction::with(['customer', 'items.itemable'])->find($id),
             'product' => Product::find($id),
             'service_order' => ServiceOrder::find($id),
+            // The shift (cut) of the register: a closed one can be reprinted.
+            'cash_register_session' => CashRegisterSession::with([
+                'cashRegister',
+                'opener',
+                'payments',
+                'cashMovements.user',
+            ])->find($id),
             default => null,
         };
 
@@ -64,6 +73,10 @@ class PrintDataSourceResolver
         if ($source instanceof Customer) {
             return $source->branch_id === null
                 || (int) $source->branch?->subscription_id === $subscriptionId;
+        }
+
+        if ($source instanceof CashRegisterSession) {
+            return (int) $source->getSubscriptionId() === $subscriptionId;
         }
 
         return (int) $source->branch?->subscription_id === $subscriptionId;

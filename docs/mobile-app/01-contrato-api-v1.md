@@ -171,6 +171,7 @@ Se usa al abrir la app y después de cada sincronización de permisos.
 | `POST /print/*` (órdenes) | `services.print_tickets` |
 | `GET /sync/*` | cualquier sesión válida |
 | `GET /cash-register-sessions/{id}/summary` (corte) | `pos.access` |
+| `GET /cash-register-sessions/{id}/receipt` (corte imprimible) | `pos.access` |
 | `PUT /cash-register-sessions/{id}` (cerrar caja) | `pos.access` |
 | `PUT /branch/switch/{branch}` | `system.branches.switch` |
 | `GET /notifications` | sesión válida |
@@ -620,11 +621,37 @@ Reglas para la app:
   de color: verde cuando `diferencia === 0`, naranja cuando hay descuadre.
 - Tras cerrar: limpiar la sesión y el carrito de la caché local, volver a la pantalla de apertura
   y ofrecer **imprimir o enviar el corte**.
-- **Impresión del corte:** se genera en el dispositivo con el encoder ESC/POS local a partir del
-  objeto `summary` (encabezado, periodo del turno, desglose por método, movimientos, bancos,
-  total esperado, contado y diferencia). El endpoint de impresión del servidor no soporta
-  `cash_register_session` como `data_source_type`; si más adelante se quiere plantilla del negocio,
-  se agrega ese tipo a `PrintController::resolveDataSource`.
+- **Impresión del corte:** el servidor **sí** lo imprime. Con
+  `GET /cash-register-sessions/{id}/receipt` (§6.3) la app recibe el corte listo para reimprimir
+  (cerrado o en curso) con la plantilla del negocio (contexto `cash_register`) y, si el negocio aún no
+  ha creado una, con la plantilla **incorporada** del servidor; el mismo corte se puede imprimir por
+  origen con `POST /print/bluetooth-payload`, `POST /print/payload` y `POST /print/ticket-html`
+  usando `data_source_type = cash_register_session` (variables `{{corte.*}}`, ver §10).
+
+### 6.3 `GET /cash-register-sessions/{id}/receipt` — ✅ implementado (Fase 4)
+Permiso: `pos.access`. Query opcional: `template_id` (plantilla del negocio a usar). Devuelve el
+**corte listo para reimprimir**, también el de un turno cerrado hace días (que la app no puede
+reconstruir por sí sola).
+
+```json
+{
+  "session": { "id": 41, "status": "cerrada", "opened_at": "…", "closed_at": "…", "cash_register": "Caja 1" },
+  "summary": { "…mismo objeto de 6.2, con los valores congelados del cierre…" },
+  "template": { "id": 12, "name": "Corte de caja", "builtin": false },
+  "operations": [ { "nombre": "TextoSegunPaginaDeCodigos", "argumentos": [0, "cp850", "…texto del corte…"] } ],
+  "unsupported_operations": [],
+  "warnings": [],
+  "paperWidth": "80mm",
+  "feedLines": 3
+}
+```
+- La plantilla se elige así: `template_id` si viene (y es de la suscripción, si no `404`), si no la
+  plantilla del negocio con `context_type = cash_register` (la más reciente, priorizando `is_default`)
+  y, si el negocio no tiene ninguna, una **plantilla incorporada** del servidor
+  (`App\Services\Printing\CashRegisterCutTemplate`): `template.builtin = true` y `template.id = null`.
+- `operations` se entrega con el mismo formato que §10 (el cliente solo las manda a la impresora), así
+  que el corte se imprime igual que un ticket: `TextoSegunPaginaDeCodigos` para 80 mm y
+  `EscribirTexto` para 58 mm o etiquetas.
 
 ### `GET /bank-accounts` — ✅ implementado (Fase 1)
 ```json
@@ -1360,7 +1387,20 @@ Response `200`:
 ```
 
 `data_source_type` acepta: `pos` | `transaction` | `service_order` | `product` | `customer` |
-`order` | `general`.
+`order` | `cash_register_session` | `general`.
+
+`cash_register_session` imprime un **turno de caja** (el corte de §6.3): `data_source_id` es el id de
+la sesión y la plantilla debe ser de tipo `ticket_venta` (contexto recomendado `cash_register`).
+Permiso: sigue siendo el operativo (`pos.access` entra en la lista).
+
+Variables del corte (`{{corte.*}}`), las mismas cifras que el `summary` de §6.2:
+`folio`, `caja`, `cajero`, `fecha_apertura`, `fecha_cierre` (`En curso` si el turno sigue abierto),
+`fondo_inicial`, `ventas_efectivo`, `ingresos`, `retiros`, `esperado`, `contado` (`0.00` si aún no se ha
+cerrado), `diferencia`, `tarjeta`, `transferencia`, `saldo`, `total_ventas`, `ventas` (nº de ventas),
+`pagos` (nº de pagos) y `notas`. Los importes van con dos decimales y separador de miles (`3,500.00`),
+igual que el resto de los tickets. El negocio puede diseñar su plantilla de corte en la web eligiendo el
+contexto **Corte de caja** (`cash_register`); mientras no la cree, se usa la incorporada.
+
 
 **Logo del negocio:** si la plantilla trae un elemento de imagen (`image` / `local_image`), el
 servidor lo **descarga, lo escala al ancho del papel** (58 mm = 384 puntos, 80 mm = 576) y lo
@@ -1992,7 +2032,7 @@ en silencio (y para no inventar pantallas que el backend todavía no puede alime
 
 | Punto | Estado | Qué hace hoy el servidor |
 |---|---|---|
-| **Corte de caja reimprimible** (B5) | **Pendiente de decisión de negocio** | `POST /print/*` no acepta una **sesión de caja** (`cash_register_session`) como fuente: no se puede reimprimir el ticket de un corte ya cerrado. Decidir entre (a) aceptar esa fuente y agregar la plantilla del corte, (b) un endpoint que devuelva el comprobante histórico, o (c) dejarlo fuera. |
+| **Corte de caja reimprimible** (B5) | ✅ **implementado** | `GET /cash-register-sessions/{id}/receipt` (§6.3) devuelve el corte de un turno cerrado listo para reimprimir (plantilla del negocio o incorporada) y `data_source_type = cash_register_session` permite imprimirlo con cualquier endpoint de §10. |
 | **`reason` al cancelar una venta** (D7) | **Pendiente de decisión de negocio** | `POST /transactions/{id}/cancel` acepta `action`, `refund_method`, `bank_account_id` y `client_uuid`, **no** un motivo escrito. Si el negocio lo quiere, se agrega `reason`/`notes` (opcional) y se documenta en §8. |
 | **Lista de dispositivos con sesión** (D8) | **Fuera de alcance (a confirmar)** | «Sesiones activas» solo permite **cerrar** las demás (`POST /profile/logout-other-devices`, con contraseña): **no** existe `GET /profile/sessions`. |
 | **Sucursal por sesión** (D6) | **Pendiente de decisión** | `PUT /branch/switch/{id}` escribe `users.branch_id`, así que el cambio es **global**: afecta a la web y a los demás dispositivos del mismo usuario (no solo al teléfono que lo pide). La app ya lo advierte en la confirmación; cambiar a «sucursal por token» es un cambio mayor que depende de esta decisión. |
@@ -2027,6 +2067,7 @@ en silencio (y para no inventar pantallas que el backend todavía no puede alime
 | 2026-09-20 | **Correcciones P2 de la app móvil (D4):** `GET /transactions` acepta **varios estatus** a la vez (`?status[]=apartado&status[]=pendiente` o `?status=apartado,pendiente`), que es lo que necesita «Deudas por vencer» (mezcla `apartado` + `pendiente`); antes había que abrir el historial **sin filtro** (hallazgo 29). Un solo `status` sigue comportándose igual y un valor desconocido responde `422` con `errors.status.N`. Cobertura: caso nuevo en `TransactionApiTest` (arreglo, comas, un solo estatus y valor inválido). | 4 ✅ |
 | 2026-09-20 | **Correcciones P2 de la app móvil (D3):** `GET /notifications` incluye `modules` (hoy `online_store`), para que la app sepa qué contadores **ocultar** en vez de adivinar por qué `pending_orders` siempre viene en `0` cuando la tienda en línea no está contratada (hallazgo 28). Se calcula con `Subscription::getAvailableModuleNames()` (el mismo criterio que `User::getGlobalNotifications()`). Cobertura: caso nuevo en `AccountApiTest` (bandera en `false` y en `true` al contratar el módulo). | 4 ✅ |
 | 2026-09-20 | **Correcciones P2 de la app móvil (D2):** el catálogo §12 incluye `payment_not_approved` ("Solo puedes solicitar facturas de pagos aprobados."), el código con el que se rechaza la factura de un pago que no está aprobado (los `pending`/`rejected` del historial sí traen `id`, pero no son facturables). | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (B5):** el corte de caja ya es imprimible. Nuevo `GET /cash-register-sessions/{id}/receipt` (`pos.access`, `template_id` opcional) que devuelve el corte **listo para reimprimir**, incluido el de un turno cerrado hace días: `session`, `summary` (las cifras congeladas del cierre), la plantilla usada y las `operations` (mismo formato que §10). La plantilla se resuelve como `template_id` → plantilla del negocio con contexto `cash_register` (nuevo valor del enum, elegible en la web) → **plantilla incorporada** del servidor (`CashRegisterCutTemplate`, `template.builtin = true`). Además `data_source_type = cash_register_session` entra en `POST /print/bluetooth-payload`, `POST /print/payload` y `POST /print/ticket-html` (`PrintDataSourceResolver`), con las variables nuevas `{{corte.*}}`. Cobertura: dos casos nuevos en `CashRegisterCloseApiTest` (corte cerrado con la plantilla incorporada y corte con la plantilla del negocio, incluido el print por origen). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\V1\CashRegisters;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\TemplateContextType;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\CashRegisters\CashRegisterSessionReceiptRequest;
 use App\Http\Requests\Api\V1\CashRegisters\CloseCashRegisterSessionRequest;
 use App\Http\Requests\Api\V1\CashRegisters\CurrentSessionRequest;
 use App\Http\Requests\Api\V1\CashRegisters\JoinCashRegisterSessionRequest;
@@ -11,9 +13,12 @@ use App\Http\Requests\Api\V1\CashRegisters\OpenCashRegisterSessionRequest;
 use App\Http\Requests\Api\V1\CashRegisters\RejoinOrStartCashRegisterSessionRequest;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
+use App\Models\PrintTemplate;
 use App\Models\User;
 use App\Services\CashRegisters\CashRegisterSessionLifecycleService;
 use App\Services\CashRegisters\CashRegisterSessionQueryService;
+use App\Services\PrintEncoderService;
+use App\Services\Printing\CashRegisterCutTemplate;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -149,6 +154,68 @@ class CashRegisterSessionController extends Controller
         $session = $this->findSessionOrFail($cashRegisterSessionId, (int) $request->user()->branch_id);
 
         return response()->json($this->sessions->summaryPayload($session, $request->user()));
+    }
+
+    /**
+     * The cut ready to reprint (closed shifts included): the figures of the
+     * shift, the template that was used and the print operations.
+     *
+     * Needed from the phone because the cut of a shift closed days ago cannot be
+     * rebuilt by the client (B5).
+     */
+    public function receipt(CashRegisterSessionReceiptRequest $request, int $cashRegisterSessionId): JsonResponse
+    {
+        $session = $this->findSessionOrFail($cashRegisterSessionId, (int) $request->user()->branch_id);
+        $template = $this->cutTemplate($request);
+
+        $encoded = PrintEncoderService::encodeWithReport($template, $session);
+
+        return response()->json([
+            'session' => [
+                'id' => $session->id,
+                'status' => $session->status instanceof \BackedEnum ? $session->status->value : $session->status,
+                'opened_at' => $session->opened_at?->toIso8601String(),
+                'closed_at' => $session->closed_at?->toIso8601String(),
+                'cash_register' => $session->cashRegister?->name,
+            ],
+            'summary' => $this->sessions->summaryPayload($session, $request->user()),
+            'template' => [
+                'id' => $template->exists ? $template->id : null,
+                'name' => $template->name,
+                'builtin' => !$template->exists,
+            ],
+            'operations' => $encoded['operations'],
+            'unsupported_operations' => $encoded['unsupported_operations'],
+            'warnings' => $encoded['warnings'],
+            'paperWidth' => $template->content['config']['paperWidth'] ?? '80mm',
+            'feedLines' => $template->content['config']['feedLines'] ?? 0,
+        ]);
+    }
+
+    /**
+     * Template of the cut: the one the client asks for, else the cut template of
+     * the business, else the built-in one.
+     */
+    private function cutTemplate(CashRegisterSessionReceiptRequest $request): PrintTemplate
+    {
+        $subscriptionId = $request->user()->branch?->subscription_id;
+
+        if ($templateId = (int) $request->validated('template_id')) {
+            $template = PrintTemplate::where('subscription_id', $subscriptionId)->find($templateId);
+
+            if (!$template) {
+                throw new NotFoundHttpException('Recurso no encontrado.');
+            }
+
+            return $template;
+        }
+
+        return PrintTemplate::where('subscription_id', $subscriptionId)
+            ->where('context_type', TemplateContextType::CASH_REGISTER->value)
+            ->orderByDesc('is_default')
+            ->latest('id')
+            ->first()
+            ?? CashRegisterCutTemplate::make();
     }
 
     public function close(CloseCashRegisterSessionRequest $request, int $cashRegisterSessionId): JsonResponse

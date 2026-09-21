@@ -6,12 +6,15 @@ use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\SessionCashMovementType;
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Payment;
+use App\Models\PrintTemplate;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -385,5 +388,119 @@ class CashRegisterCloseApiTest extends TestCase
 
         $this->putJson('/api/v1/cash-register-sessions/' . $this->session->id, ['closing_cash_balance' => 100])
             ->assertStatus(401);
+    }
+
+    /**
+     * A closed shift is a document: it can be reprinted from the phone. Without
+     * a template of the business the built-in cut template is used, so the
+     * receipt always has the figures of the shift (B5).
+     */
+    #[Test]
+    public function it_returns_the_printable_receipt_of_a_closed_cut(): void
+    {
+        $this->fillShift();
+
+        $this->withToken($this->token)
+            ->putJson('/api/v1/cash-register-sessions/' . $this->session->id, ['closing_cash_balance' => 5040])
+            ->assertOk();
+
+        $response = $this->withToken($this->token)
+            ->getJson('/api/v1/cash-register-sessions/' . $this->session->id . '/receipt');
+
+        $response->assertOk()
+            ->assertJsonPath('session.id', $this->session->id)
+            // The frozen numbers of the closed shift travel with the receipt.
+            ->assertJsonPath('summary.session.status', 'cerrada')
+            ->assertJsonPath('summary.cash.expected_total', 5050)
+            ->assertJsonPath('summary.cash.counted_total', 5040)
+            ->assertJsonPath('summary.cash.difference', -10)
+            // No template of the business: the built-in one prints the cut.
+            ->assertJsonPath('template.builtin', true)
+            ->assertJsonPath('template.id', null);
+
+        $text = $this->printedText($response->json('operations'));
+
+        $this->assertStringContainsString('Caja 1', $text);
+        $this->assertStringContainsString('5,050.00', $text);
+        $this->assertStringContainsString('5,040.00', $text);
+        $this->assertStringContainsString('3,500.00', $text);
+    }
+
+    /**
+     * The business may design its own cut template (context `cash_register`):
+     * the receipt uses it automatically, and the shift can also be printed like
+     * any other document (`data_source_type = cash_register_session`).
+     */
+    #[Test]
+    public function it_prints_the_cut_with_the_template_of_the_business(): void
+    {
+        $this->fillShift();
+
+        $template = PrintTemplate::factory()->create([
+            'subscription_id' => $this->subscription->id,
+            'name' => 'Corte del negocio',
+            'type' => TemplateType::SALE_TICKET,
+            'context_type' => TemplateContextType::CASH_REGISTER->value,
+            'content' => [
+                'config' => ['paperWidth' => '80mm', 'feedLines' => 3],
+                'elements' => [
+                    ['type' => 'text', 'data' => ['text' => 'EFECTIVO: {{corte.ventas_efectivo}}', 'x' => 0, 'y' => 0]],
+                    ['type' => 'text', 'data' => ['text' => 'CONTADO: {{corte.contado}}', 'x' => 0, 'y' => 10]],
+                ],
+            ],
+        ]);
+
+        // The receipt picks the cut template of the business on its own.
+        $receipt = $this->withToken($this->token)
+            ->getJson('/api/v1/cash-register-sessions/' . $this->session->id . '/receipt')
+            ->assertOk()
+            ->assertJsonPath('template.id', $template->id)
+            ->assertJsonPath('template.builtin', false);
+
+        $receiptText = $this->printedText($receipt->json('operations'));
+
+        $this->assertStringContainsString('EFECTIVO: 3,500.00', $receiptText);
+        // Not closed yet: nothing counted.
+        $this->assertStringContainsString('CONTADO: 0.00', $receiptText);
+
+        // And the shift is a print source like any other document: the bytes of
+        // the ticket carry its figures.
+        $payload = $this->withToken($this->token)
+            ->postJson('/api/v1/print/bluetooth-payload', [
+                'template_id' => $template->id,
+                'data_source_type' => 'cash_register_session',
+                'data_source_id' => $this->session->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('paperWidth', '80mm');
+
+        $this->assertStringContainsString(
+            'EFECTIVO: 3,500.00',
+            base64_decode($payload->json('commands_base64'))
+        );
+    }
+
+    /**
+     * Text of the print operations, whichever one carries it: a ticket of 80 mm
+     * is one `TextoSegunPaginaDeCodigos` (page, codepage, text) and the labels or
+     * 58 mm tickets are `EscribirTexto`.
+     *
+     * @param  array<int, array<string, mixed>>  $operations
+     */
+    private function printedText(array $operations): string
+    {
+        $texts = [];
+
+        foreach ($operations as $operation) {
+            $arguments = $operation['argumentos'] ?? [];
+
+            $texts[] = match ($operation['nombre'] ?? null) {
+                'EscribirTexto' => (string) ($arguments[0] ?? ''),
+                'TextoSegunPaginaDeCodigos' => (string) ($arguments[2] ?? ''),
+                default => '',
+            };
+        }
+
+        return implode('', $texts);
     }
 }

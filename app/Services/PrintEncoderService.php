@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\PaymentMethod;
 use App\Enums\TemplateType;
 use App\Enums\TransactionStatus;
 use App\Models\Branch;
+use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Payment; // Importamos el modelo Payment
 use App\Models\PrintTemplate;
@@ -15,6 +17,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Services\Printing\EscPosImageRasterizer;
 use App\Services\Printing\TsplImageRasterizer;
+use App\Services\CashRegisters\CashRegisterSessionQueryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -42,10 +45,13 @@ class PrintEncoderService
         $unsupported = [];
         $warnings = [];
 
-        // 1. Ticket de Venta / Orden de Servicio / CLIENTE
+        // 1. Ticket de Venta / Orden de Servicio / CLIENTE / CORTE DE CAJA
         if (
             $template->type === TemplateType::SALE_TICKET &&
-            ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder || $dataSource instanceof Customer)
+            ($dataSource instanceof Transaction
+                || $dataSource instanceof ServiceOrder
+                || $dataSource instanceof Customer
+                || $dataSource instanceof CashRegisterSession)
         ) {
             $operations = self::encodeEscPos($template, $dataSource, $options);
         }
@@ -740,6 +746,14 @@ class PrintEncoderService
             }
 
             $replacements += self::getVendedorReplacements(auth()->user());
+        } elseif ($dataSource instanceof CashRegisterSession) {
+            $dataSource->loadMissing(['cashRegister.branch.subscription', 'opener', 'payments', 'cashMovements']);
+
+            $replacements += self::getCashRegisterCutReplacements($dataSource);
+            $replacements += self::getNegocioReplacements($dataSource->cashRegister->branch->subscription);
+            $replacements += self::getSucursalReplacements($dataSource->cashRegister->branch);
+            $replacements += self::getVendedorReplacements($dataSource->opener);
+
         }
 
         $text = str_replace(array_keys($replacements), array_values($replacements), $text);
@@ -747,7 +761,44 @@ class PrintEncoderService
         $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{v\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{c\.(.*?)}}/', '', $text);
+        $text = preg_replace('/{{corte\.(.*?)}}/', '', $text);
 
         return $text;
+    }
+
+    /**
+     * Values a cut ticket prints: the same figures the cut screen shows, with
+     * the frozen totals of a closed shift.
+     *
+     * @return array<string, string>
+     */
+    private static function getCashRegisterCutReplacements(CashRegisterSession $session): array
+    {
+        $summary = app(CashRegisterSessionQueryService::class)->summaryPayload($session, $session->opener);
+        $cash = $summary['cash'];
+        $methods = $summary['payments_by_method'];
+        $money = fn (?float $value): string => number_format((float) $value, 2);
+
+        return [
+            '{{corte.folio}}' => '#' . $session->id,
+            '{{corte.caja}}' => $session->cashRegister->name ?? '',
+            '{{corte.cajero}}' => $session->opener->name ?? '',
+            '{{corte.fecha_apertura}}' => $session->opened_at?->format('d/m/Y H:i A') ?? '',
+            '{{corte.fecha_cierre}}' => $session->closed_at?->format('d/m/Y H:i A') ?? 'En curso',
+            '{{corte.fondo_inicial}}' => $money($cash['opening']),
+            '{{corte.ventas_efectivo}}' => $money($methods[PaymentMethod::CASH->value] ?? 0),
+            '{{corte.ingresos}}' => $money($cash['inflows']),
+            '{{corte.retiros}}' => $money($cash['outflows']),
+            '{{corte.esperado}}' => $money($cash['expected_total']),
+            '{{corte.contado}}' => $money($cash['counted_total'] ?? 0),
+            '{{corte.diferencia}}' => $money($cash['difference'] ?? 0),
+            '{{corte.tarjeta}}' => $money($methods[PaymentMethod::CARD->value] ?? 0),
+            '{{corte.transferencia}}' => $money($methods[PaymentMethod::TRANSFER->value] ?? 0),
+            '{{corte.saldo}}' => $money($methods[PaymentMethod::BALANCE->value] ?? 0),
+            '{{corte.total_ventas}}' => $money(array_sum($methods)),
+            '{{corte.ventas}}' => (string) $summary['counts']['transactions'],
+            '{{corte.pagos}}' => (string) $summary['counts']['payments'],
+            '{{corte.notas}}' => $session->notes ?? '',
+        ];
     }
 }
