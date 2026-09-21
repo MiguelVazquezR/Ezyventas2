@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Account;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\Account\NotificationsRequest;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
 /**
@@ -11,6 +12,9 @@ use Illuminate\Http\JsonResponse;
  */
 class NotificationController extends Controller
 {
+    /** Name the plan items use for the online store module. */
+    private const ONLINE_STORE_MODULE = 'Tienda en línea';
+
     /**
      * Every counter is always present, even when the user has no access to the
      * module (then they all come as zero).
@@ -25,9 +29,26 @@ class NotificationController extends Controller
 
     public function index(NotificationsRequest $request): JsonResponse
     {
+        $user = $request->user();
+
         return response()->json(array_merge(
             self::EMPTY_COUNTERS,
-            $request->user()->getGlobalNotifications()
+            $user->getGlobalNotifications(),
+            [
+                // Which modules the business has contracted: the app hides the
+                // counters that do not apply instead of showing a zero it cannot
+                // explain (the online store orders are managed from the web).
+                'modules' => [
+                    'online_store' => $this->hasOnlineStore($user),
+                ],
+            ]
         ));
+    }
+
+    private function hasOnlineStore(User $user): bool
+    {
+        $modules = $user->branch?->subscription?->getAvailableModuleNames() ?? [];
+
+        return in_array(self::ONLINE_STORE_MODULE, $modules, true);
     }
 }

@@ -1676,12 +1676,15 @@ Alimenta el icono de campana del topbar. Permiso: sesión válida.
 Los cinco contadores llegan **siempre** (aunque el usuario no tenga acceso a ventas, en ese caso en
 `0`). Se calculan con `User::getGlobalNotifications()`.
 ```json
-{ "expiring_debts": 3, "upcoming_deliveries": 2, "unread_updates": 5, "pending_orders": 1, "total": 11 }
+{ "expiring_debts": 3, "upcoming_deliveries": 2, "unread_updates": 5, "pending_orders": 1, "total": 11, "modules": { "online_store": true } }
 ```
 - `expiring_debts`: apartados/créditos que vencen en ≤ 3 días.
 - `upcoming_deliveries`: pedidos `por_entregar` con entrega en ≤ 3 días.
 - `unread_updates`: notas de la versión sin leer.
 - `pending_orders`: pedidos de la tienda en línea pendientes o en revisión (solo si el módulo está activo).
+- `modules`: qué módulos tiene **contratados** el negocio. `online_store = false` significa que
+  `pending_orders` siempre vendrá en `0` porque el módulo no está contratado (su gestión es de la web):
+  el cliente **oculta** ese contador en vez de mostrar un cero que no puede explicar.
 - Si el usuario no tiene `transactions.access`, todos los contadores vienen en `0`.
 - **Sin conexión:** mostrar el último valor cacheado (sin badge si nunca se ha cargado).
 
@@ -1981,6 +1984,19 @@ php artisan route:list --path=api
 
 ---
 
+## 13b. Fuera de alcance y pendiente de decisión
+
+Se documenta aquí lo que la app **no** debe esperar de esta entrega, para que ningún cliente lo asuma
+en silencio (y para no inventar pantallas que el backend todavía no puede alimentar).
+
+| Punto | Estado | Qué hace hoy el servidor |
+|---|---|---|
+| **Corte de caja reimprimible** (B5) | **Pendiente de decisión de negocio** | `POST /print/*` no acepta una **sesión de caja** (`cash_register_session`) como fuente: no se puede reimprimir el ticket de un corte ya cerrado. Decidir entre (a) aceptar esa fuente y agregar la plantilla del corte, (b) un endpoint que devuelva el comprobante histórico, o (c) dejarlo fuera. |
+| **`reason` al cancelar una venta** (D7) | **Pendiente de decisión de negocio** | `POST /transactions/{id}/cancel` acepta `action`, `refund_method`, `bank_account_id` y `client_uuid`, **no** un motivo escrito. Si el negocio lo quiere, se agrega `reason`/`notes` (opcional) y se documenta en §8. |
+| **Lista de dispositivos con sesión** (D8) | **Fuera de alcance (a confirmar)** | «Sesiones activas» solo permite **cerrar** las demás (`POST /profile/logout-other-devices`, con contraseña): **no** existe `GET /profile/sessions`. |
+| **Sucursal por sesión** (D6) | **Pendiente de decisión** | `PUT /branch/switch/{id}` escribe `users.branch_id`, así que el cambio es **global**: afecta a la web y a los demás dispositivos del mismo usuario (no solo al teléfono que lo pide). La app ya lo advierte en la confirmación; cambiar a «sucursal por token» es un cambio mayor que depende de esta decisión. |
+| **PDF de la constancia fiscal**, respaldo del ticket en PDF, permisos BLE y modo offline | **Fuera de alcance** | Se resuelven en la app o en la web, no en el backend (ver la sección E del plan de trabajo). |
+
 ## 14. Control de cambios de este contrato
 
 | Fecha | Cambio | Fase |
@@ -2008,6 +2024,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P2 de la app móvil (B6):** la etiqueta ya no sale con el código de barras vacío (`BARCODE …,2,2,""`, el caso real de la plantilla de prueba; hallazgo 19). Si el valor del `barcode` se resuelve a cadena vacía, el servidor rellena con el identificador del documento (`products.sku`, o `P-<id>`; `folio` de la venta/orden; `C-<id>` de un cliente) y lo declara en el campo nuevo `warnings` de `/print/payload`. La misma reserva se aplica al `barcode` de un ticket ESC/POS. Cobertura: dos casos nuevos en `PrintingApiTest` (relleno + aviso y valor real sin aviso). | 4 ✅ |
 | 2026-09-20 | **Contrato vs realidad (C1-C8 + `PUT /profile` de la sección E):** C1 `POST /cash-register-sessions` ya no lista `user_id` (el servidor usa el del token y el request no lo acepta); C2 el estatus de la suscripción es `activo`/`expirado`/`suspendido` (masculino, valores reales del enum) y se documenta que para mostrarlo se usa `status_data.label`; C3 `create_customer` pasa a **opcional** (`sometimes boolean`; ausente = false) y se documenta que en multipart los booleanos viajan `1`/`0`; C4 se documenta que `profile_photo_url` puede ser un placeholder de ui-avatars y que **`has_photo` es el campo que decide**; C5 `GET /transactions/{id}` expone `customer_id` en la raíz (lo usa `TransactionCancellationModal.vue` en la web); C6 se documenta que editar un pago acepta los 5 métodos mientras la web ofrece 4; C7 se documenta `promised_at` como `YYYY-MM-DD` local; C8 se documenta que `owner_only` **hoy no se emite** (el 403 de suscripción es el genérico). Además, `PUT /profile` acepta JSON además de multipart. Cobertura: casos nuevos en `ServiceOrderWriteApiTest` (alta sin `create_customer`) y `TransactionApiTest` (`customer_id` en el detalle). | 4 ✅ |
 | 2026-09-20 | **Correcciones P2 de la app móvil (D4):** `GET /transactions` acepta **varios estatus** a la vez (`?status[]=apartado&status[]=pendiente` o `?status=apartado,pendiente`), que es lo que necesita «Deudas por vencer» (mezcla `apartado` + `pendiente`); antes había que abrir el historial **sin filtro** (hallazgo 29). Un solo `status` sigue comportándose igual y un valor desconocido responde `422` con `errors.status.N`. Cobertura: caso nuevo en `TransactionApiTest` (arreglo, comas, un solo estatus y valor inválido). | 4 ✅ |
+| 2026-09-20 | **Correcciones P2 de la app móvil (D3):** `GET /notifications` incluye `modules` (hoy `online_store`), para que la app sepa qué contadores **ocultar** en vez de adivinar por qué `pending_orders` siempre viene en `0` cuando la tienda en línea no está contratada (hallazgo 28). Se calcula con `Subscription::getAvailableModuleNames()` (el mismo criterio que `User::getGlobalNotifications()`). Cobertura: caso nuevo en `AccountApiTest` (bandera en `false` y en `true` al contratar el módulo). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

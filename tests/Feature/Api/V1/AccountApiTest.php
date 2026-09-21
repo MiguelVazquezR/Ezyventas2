@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Enums\PlanItemType;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Models\Branch;
+use App\Models\PlanItem;
+use App\Models\SubscriptionItem;
 use App\Models\SubscriptionPayment;
 use App\Models\SubscriptionVersion;
 use App\Models\Transaction;
@@ -356,5 +359,44 @@ class AccountApiTest extends TestCase
             ->postJson('/api/v1/subscription/payments/' . $entry['payment']['id'] . '/request-invoice')
             ->assertOk()
             ->assertJsonPath('message', 'Factura solicitada. Nos pondremos en contacto pronto.');
+    }
+
+    /**
+     * The counters of the bell are always sent, so the response says which
+     * modules the business has contracted: the app hides what does not apply
+     * instead of showing a zero it cannot explain (hallazgo 28).
+     */
+    #[Test]
+    public function it_flags_the_modules_of_the_business_in_the_notifications(): void
+    {
+        $this->withToken($this->token)
+            ->getJson('/api/v1/notifications')
+            ->assertOk()
+            ->assertJsonPath('modules.online_store', false);
+
+        // The business contracts the online store: the flag turns true.
+        $version = SubscriptionVersion::where('subscription_id', $this->subscription->id)->firstOrFail();
+
+        SubscriptionItem::create([
+            'subscription_version_id' => $version->id,
+            'item_key' => 'module_online_store',
+            'item_type' => 'module',
+            'name' => 'Tienda en línea',
+            'quantity' => 1,
+            'unit_price' => 0,
+        ]);
+
+        PlanItem::create([
+            'key' => 'module_online_store',
+            'type' => PlanItemType::MODULE,
+            'name' => 'Tienda en línea',
+            'monthly_price' => 0,
+            'is_active' => true,
+        ]);
+
+        $this->withToken($this->token)
+            ->getJson('/api/v1/notifications')
+            ->assertOk()
+            ->assertJsonPath('modules.online_store', true);
     }
 }
