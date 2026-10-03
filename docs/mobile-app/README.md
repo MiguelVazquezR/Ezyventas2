@@ -12,6 +12,7 @@ Laravel, sobre la **misma base de datos de producción**.
 | `01-contrato-api-v1.md` | Contrato completo de la API: endpoints, permisos, request y response JSON de cada uno. |
 | `02-modelo-de-datos.md` | Tablas, columnas, relaciones y enums que usa la app móvil. |
 | `03-design-system-tesla-ui.md` | Design system "Tesla UI": colores exactos, **reglas de contraste**, tipografía, formas, copy de pantallas y mapeo a widgets Flutter. |
+| `prompts/4b-inicio-dashboard.md` | **Prompt listo para copiar** al agente de la app: qué secciones leer (y cuáles no), entregables, reglas no negociables y criterios de aceptación de la pantalla de inicio. |
 
 ## Reglas de oro
 
@@ -49,6 +50,7 @@ Laravel, sobre la **misma base de datos de producción**.
 | 2 | Lectura/estatus: ventas, órdenes de servicio, diagnóstico con evidencias | ✅ **implementada** (18 sep 2026) |
 | 3 | Escrituras: abrir caja, checkout, apartados, pedidos, abonos, alta/edición de órdenes | ✅ **implementada** (18 sep 2026) |
 | 4 | Impresión y WhatsApp, corte/cierre de caja, cuenta (sucursal, perfil, suscripción, soporte, notificaciones) | ✅ **implementada** (18 sep 2026) |
+| **4b** | Inicio (dashboard): KPIs del día, tendencia semanal, apartados por vencer, entregas próximas, saldo por cobrar, inventario y órdenes de servicio, más el estado de caja | ✅ **implementada** (3 oct 2026) |
 | 5 | Offline-first: SQLite local, cola de operaciones, `sync/*` | pendiente |
 | 6+ | Movimientos de efectivo, pago de suscripción, 2FA, reportes, intercambios | futuro |
 
@@ -58,6 +60,10 @@ Laravel, sobre la **misma base de datos de producción**.
 POST   /api/v1/auth/login                    (throttle 5/min por correo + IP)
 GET    /api/v1/auth/me                       (auth:sanctum)
 POST   /api/v1/auth/logout                   (auth:sanctum)
+
+GET    /api/v1/dashboard                     (inicio: KPIs, alertas y estado de caja en una sola llamada)
+GET    /api/v1/dashboard/expiring-layaways   ?days=1..30 (def. 3) — apartados y créditos por vencer
+GET    /api/v1/dashboard/upcoming-deliveries ?days=1..30 (def. 3) — pedidos por entregar
 
 GET    /api/v1/catalog/products              ?search&category_id&updated_since&page&per_page
 GET    /api/v1/catalog/products/{productId}

@@ -139,6 +139,9 @@ Se usa al abrir la app y después de cada sincronización de permisos.
 
 | Endpoint | Permiso (Spatie) |
 |---|---|
+| `GET /dashboard` | un permiso **por bloque**: `dashboard.see_sales`, `dashboard.see_layaways`, `dashboard.see_orders`, `dashboard.see_outstanding_balances`, `dashboard.see_inventory_details`, `services.orders.access` (el bloque sin permiso viaja en `null`; `cash_register` no exige permiso) |
+| `GET /dashboard/expiring-layaways` | `dashboard.see_layaways` |
+| `GET /dashboard/upcoming-deliveries` | `dashboard.see_orders` |
 | `GET /catalog/products`, `GET /catalog/products/{id}` | `pos.access` |
 | `GET /catalog/categories`, `GET /catalog/services` | `pos.access` o `services.orders.access` (el catálogo de servicios también sirve al módulo de órdenes) |
 | `GET /customers`, `GET /customers/{id}` | `pos.access` (en el contexto del POS); aceptar también `customers.access` / `customers.see_details` si el usuario abre el módulo de clientes sin POS |
@@ -181,6 +184,8 @@ Se usa al abrir la app y después de cada sincronización de permisos.
 | `GET /subscription`, `PUT /subscription`, `POST /subscription/documents`, `POST /subscription/payments/{id}/request-invoice` | **propietario de la suscripción** (usuario sin roles) |
 
 Reglas de UX derivadas:
+- El **inicio** dibuja solo los bloques permitidos: un bloque en `null` se **oculta** (no se pinta en
+  cero), y `cash_register` siempre está disponible.
 - El módulo **Punto de venta** solo se muestra con `pos.access`.
 - El módulo **Órdenes de servicio** solo con `services.orders.access`.
 - La app **oculta** (no solo deshabilita) las acciones sin permiso; el servidor **siempre** revalida.
@@ -188,6 +193,308 @@ Reglas de UX derivadas:
   de sus módulos activos.
 
 ---
+
+## 3b. Inicio de la app (dashboard) — ✅ implementado (3 oct 2026)
+
+> Pantalla de inicio del teléfono: KPIs del día, alertas y estado de la caja.
+> Rutas: `routes/api/v1/dashboard.php` → `Api\V1\Dashboard\DashboardController` →
+> `App\Actions\Dashboard\BuildMobileDashboardAction` → `DashboardMetricsService` (métricas) y
+> `DashboardAlertService` (alertas y contadores).
+> Validación: `Api\V1\Dashboard\{ShowDashboard,ExpiringLayaways,UpcomingDeliveries}Request`.
+> Cobertura: `tests/Feature/Api/V1/DashboardApiTest.php` (8 casos).
+> Cómo se compone la pantalla: `00-contexto-app-movil.md` §4.2.
+
+El inicio se pide en **una sola llamada** (`GET /dashboard`); los dos listados de alertas son
+endpoints **aparte** que se piden solo cuando el usuario toca la tarjeta correspondiente.
+
+### 3b.1 Bloques y permisos
+
+La respuesta se arma por bloques y **ninguna llave falta nunca**: si el usuario no tiene el permiso
+del bloque, el valor viaja en `null` y la app simplemente no dibuja esa tarjeta.
+
+| Bloque | Permiso (Spatie) | Contenido |
+|---|---|---|
+| `sales` | `dashboard.see_sales` | Venta del día, ticket promedio, comparación con ayer y tendencia semanal |
+| `layaways` | `dashboard.see_layaways` | `expiring_count`: apartados y créditos por vencer |
+| `orders` | `dashboard.see_orders` | `upcoming_deliveries_count`: pedidos por entregar |
+| `receivables` | `dashboard.see_outstanding_balances` | `total_customer_debt`: deuda de los clientes |
+| `inventory` | `dashboard.see_inventory_details` | KPIs de stock y lista corta de bajo stock |
+| `service_orders` | `services.orders.access` | Órdenes de servicio por estatus |
+| `cash_register` | *(ninguno)* | Sesión de caja del usuario; **siempre viaja** |
+
+Reglas derivadas:
+- `null` **no** es `0`: `0` = «no hay nada pendiente»; `null` = «este usuario no puede verlo».
+- El propietario recibe todos los bloques; el empleado solo los de sus permisos.
+- `cash_register` viaja siempre: el inicio necesita saber si hay turno abierto (mismo objeto que
+  `GET /cash-register-sessions/current`, §6) para habilitar el cobro.
+- El inicio y el POS web muestran **siempre las mismas cifras** de ventas: los KPI salen de
+  `SalesDashboardService`, el mismo servicio que alimenta el dashboard web.
+
+### 3b.2 `GET /dashboard` — ✅ implementado
+
+Sin parámetros: la sucursal, la suscripción y los permisos se derivan del token
+(`ShowDashboardRequest` solo exige una sesión válida).
+
+Response `200` (ejemplo de propietario con turno abierto):
+
+```json
+{
+  "generated_at": "2026-10-03T18:54:02.467728Z",
+  "sales": {
+    "today_total": "4820.00",
+    "today_count": 12,
+    "average_ticket": "401.67",
+    "yesterday_total": "3910.00",
+    "weekly_trend": [
+      { "day": "lun.", "total": "2100.00" },
+      { "day": "mar.", "total": "3050.00" },
+      { "day": "mié.", "total": "0.00" },
+      { "day": "jue.", "total": "1780.00" },
+      { "day": "vie.", "total": "4400.00" },
+      { "day": "sáb.", "total": "4820.00" },
+      { "day": "dom.", "total": "0.00" }
+    ]
+  },
+  "layaways": { "expiring_count": 2 },
+  "orders": { "upcoming_deliveries_count": 3 },
+  "receivables": { "total_customer_debt": "1250.00" },
+  "inventory": {
+    "total_items": 214,
+    "healthy_stock_count": 168,
+    "low_stock_count": 39,
+    "out_of_stock_count": 7,
+    "total_cost": "185400.00",
+    "total_sale_value": "312750.00",
+    "low_stock_products": [
+      { "id": 88, "name": "Filtro de aceite HF-204", "sku": "FLT-204", "current_stock": 2, "min_stock": 5 },
+      { "id": 142, "name": "Bujía iridium CR8E", "sku": "BUJ-CR8E", "current_stock": 1, "min_stock": 4 }
+    ]
+  },
+  "service_orders": {
+    "total": 26,
+    "by_status": {
+      "pendiente": 4,
+      "en_progreso": 3,
+      "esperando_refaccion": 2,
+      "terminado": 1,
+      "entregado": 15,
+      "cancelado": 1
+    }
+  },
+  "cash_register": {
+    "has_open_session": true,
+    "session": {
+      "id": 41,
+      "status": "abierta",
+      "opened_at": "2026-10-03T13:00:00-06:00",
+      "opening_cash_balance": 1500,
+      "opening_bank_balances": [],
+      "cash_register": { "id": 1, "name": "Caja 1" },
+      "opener": { "id": 4, "name": "José Pérez" },
+      "users": [{ "id": 4, "name": "José Pérez" }],
+      "totals": { "cash": 2760, "card": 800, "transfer": 0, "balance": 0 }
+    }
+  }
+}
+```
+
+### 3b.2.1 Notas de los campos
+
+- `generated_at`: momento del cálculo, en **ISO-8601 UTC** (`…Z`), igual que el resto de la API;
+  sirve para el «Actualizado hace un momento» de la cabecera.
+- El dinero de los KPIs y de las listas de alertas viaja como **string decimal** con 2 decimales y sin
+  separador de miles (`"4820.00"`), nunca como número: convertir con `double.parse`. Única excepción:
+  `cash_register.session` conserva los **números** de §6 (`totals.cash`, `opening_cash_balance`,
+  saldos bancarios), tal como los devuelve la caja.
+- `sales.*`: mismo criterio que la web — **no** cuentan las ventas `cancelado` ni `cambiado`, y el
+  monto es `subtotal - descuento + impuesto` (el envío no entra). `today_count` es el número de
+  ventas válidas del día y `average_ticket = today_total / today_count` (`"0.00"` sin ventas).
+- `sales.weekly_trend`: **siempre 7 elementos**, de lunes a domingo de la semana en curso, con los
+  días sin ventas en `"0.00"`. `day` es la abreviatura corta en español (`"lun."`, `"mié."`); el
+  orden es fijo, así que la app puede usar su propio texto por índice (0 = lunes).
+- `layaways.expiring_count` y `orders.upcoming_deliveries_count`: contadores de los listados de
+  §3b.3 y §3b.4 con la ventana por defecto (**3 días**). Al tocar la tarjeta, la app abre el listado
+  con el mismo `days` (así el número de la tarjeta coincide con el largo de la lista).
+- `receivables.total_customer_debt`: suma de los saldos **a favor del negocio** (clientes que deben),
+  expresada en positivo; si nadie debe, `"0.00"`. Los saldos a favor del cliente **no** reducen esta
+  cifra (el servidor invierte el signo una sola vez, como el dashboard web).
+- `inventory.total_items`: artículos **con stock registrado en la sucursal** (producto simple = 1;
+  producto con variantes = 1 por variante), no el tamaño del catálogo.
+- `inventory.healthy_stock_count`: artículos por **arriba del mínimo** configurado en la sucursal
+  (es el `in_stock_count` del dashboard web, renombrado para que no se lea como «tiene stock»);
+  `low_stock_count` = `0 < stock ≤ min_stock`; `out_of_stock_count` = `stock ≤ 0`.
+- `inventory.total_cost` / `total_sale_value`: valor del inventario al costo y al precio de venta
+  (las variantes usan su precio base más el modificador).
+- `inventory.low_stock_products`: hasta **5** filas `{id, name, sku, current_stock, min_stock}`
+  (`id` es el del producto y puede repetirse si el bajo stock está en varias variantes). Es la lista
+  corta para armar el pedido al proveedor.
+- `service_orders.by_status`: **siempre trae las 6 llaves** del enum (`pendiente`, `en_progreso`,
+  `esperando_refaccion`, `terminado`, `entregado`, `cancelado`) con `0` cuando no hay ninguna, para
+  que la app no tenga que tratar una llave ausente como cero. `total` es el histórico completo de la
+  sucursal (no solo las órdenes abiertas).
+- `cash_register.has_open_session`: `true` si el usuario del token tiene turno abierto.
+  `cash_register.session`: `null` o el **mismo objeto `session` de §6** (`id`, `status`, `opened_at`,
+  `opening_cash_balance`, `opening_bank_balances`, `cash_register`, `opener`, `users`, `totals`). Es
+  la sesión **del usuario**, no cualquier sesión abierta de la sucursal; `opened_at` conserva el
+  formato de §6 (ISO-8601 con desplazamiento local) y no el `…Z`.
+- Todo es de la **sucursal del usuario** (`users.branch_id`); la app **nunca** manda `branch_id`.
+- La respuesta no está cacheada ni paginada: se pide al entrar al inicio (y con pull-to-refresh).
+
+### 3b.3 `GET /dashboard/expiring-layaways` — ✅ implementado
+
+Query: `days` (opcional, entero **1-30**, por defecto **3**). Permiso: `dashboard.see_layaways`
+(sin el permiso, `403`).
+
+Devuelve las ventas **`apartado` o `pendiente`** cuya `layaway_expiration_date` **ya venció o vence
+dentro de la ventana**, ordenadas por la fecha más próxima primero (las vencidas quedan arriba).
+
+Response `200` (ejemplo de dos filas):
+
+```json
+{
+  "days": 3,
+  "data": [
+    {
+      "id": 812,
+      "folio": "A-0142",
+      "type": "apartado",
+      "status": "apartado",
+      "customer_id": 57,
+      "customer_name": "Ana Ramírez",
+      "customer_phone": "4771112233",
+      "total_amount": "1850.00",
+      "total_paid": "500.00",
+      "pending_amount": "1350.00",
+      "expiration_date": "2026-10-03",
+      "days_remaining": 0,
+      "is_overdue": false
+    },
+    {
+      "id": 798,
+      "folio": "C-0087",
+      "type": "credito",
+      "status": "pendiente",
+      "customer_id": 12,
+      "customer_name": "Refaccionaria del Valle",
+      "customer_phone": null,
+      "total_amount": "2400.00",
+      "total_paid": "400.00",
+      "pending_amount": "2000.00",
+      "expiration_date": "2026-09-30",
+      "days_remaining": -3,
+      "is_overdue": true
+    }
+  ]
+}
+```
+
+Errores:
+- `403` sin `dashboard.see_layaways`: `{"message": "Tu usuario no tiene permiso para esta acción."}`
+- `422` con `days` inválido (`0`, `31`, `abc`):
+  `{"message": "El número de días no puede ser mayor a 30.", "errors": {"days": ["El número de días no puede ser mayor a 30."]}}`.
+  Los tres mensajes posibles son «El número de días debe ser un valor entero.», «El número de días
+  debe ser al menos 1.» y «El número de días no puede ser mayor a 30.».
+
+Notas de los campos:
+- `days`: la ventana realmente aplicada (la app la reusa en el título «Próximos 3 días»).
+- `type` (`apartado` | `credito`) es una **etiqueta para la UI**; `status` trae el valor real del enum
+  (`apartado` | `pendiente`). Es la única diferencia entre ambos campos.
+- `expiration_date`: fecha **local** en `YYYY-MM-DD`, sin hora (así se captura en el POS).
+- `days_remaining`: días de calendario hasta la fecha, **contando hoy como 0** y **negativo** si ya
+  venció; `is_overdue` = `days_remaining < 0`. Los calcula el **servidor** con la zona horaria del
+  negocio: **no** recalcularlos en el teléfono.
+- `pending_amount = total_amount - total_paid`, nunca negativo (si el cliente pagó de más, `"0.00"`).
+- `customer_name` = `"Público en general"` cuando la venta no tiene cliente; `customer_phone` puede
+  venir `null`.
+- La lista **no** está paginada: trae todas las filas de la ventana (por diseño es corta). Para
+  registrar el abono, la app usa `POST /transactions/{id}/payments` (§8) y, si el abono no liquida
+  la cuenta, la fila sigue apareciendo al volver al inicio.
+
+### 3b.4 `GET /dashboard/upcoming-deliveries` — ✅ implementado
+
+Query: `days` (opcional, entero **1-30**, por defecto **3**). Permiso: `dashboard.see_orders`
+(sin el permiso, `403`).
+
+Devuelve las ventas **`por_entregar`** que **ya tienen `delivery_date`** y cuya entrega ya venció o
+cae dentro de la ventana, ordenadas por la entrega más próxima primero.
+
+Response `200` (ejemplo de dos filas):
+
+```json
+{
+  "days": 3,
+  "data": [
+    {
+      "id": 815,
+      "folio": "P-0228",
+      "status": "por_entregar",
+      "customer_id": null,
+      "customer_name": "Cliente invitado",
+      "customer_phone": null,
+      "shipping_address": null,
+      "notes": null,
+      "total_amount": "980.00",
+      "total_paid": "0.00",
+      "pending_amount": "980.00",
+      "delivery_date": "2026-10-03T00:00:00.000000Z",
+      "days_remaining": 0,
+      "is_today": true,
+      "is_overdue": false
+    },
+    {
+      "id": 830,
+      "folio": "P-0231",
+      "status": "por_entregar",
+      "customer_id": 57,
+      "customer_name": "Ana Ramírez",
+      "customer_phone": "4771112233",
+      "shipping_address": "Av. Reforma 220, col. Centro",
+      "notes": "Entregar después de las 6 pm",
+      "total_amount": "3150.00",
+      "total_paid": "1000.00",
+      "pending_amount": "2150.00",
+      "delivery_date": "2026-10-04T00:00:00.000000Z",
+      "days_remaining": 1,
+      "is_today": false,
+      "is_overdue": false
+    }
+  ]
+}
+```
+
+Errores: los mismos mensajes que §3b.3 («El número de días …»), con el permiso
+`dashboard.see_orders` para el `403`.
+
+Notas de los campos:
+- `total_paid` (suma de `payments.amount`): lo ya abonado a la venta, `"0.00"` si aún no hay pagos.
+  `pending_amount = total_amount - total_paid`, nunca negativo: es lo que se cobra al entregar.
+- `delivery_date`: ISO-8601 UTC. Ojo: la entrega se guarda como **día** (sin hora), así que la hora
+  siempre es medianoche UTC y en zonas horarias negativas (México) ese instante cae el **día
+  anterior**. Para pintar la fecha usa los campos que ya calcula el servidor (`is_today`,
+  `days_remaining`) o pasa la fecha por la zona horaria del negocio; **no** la conviertas a hora
+  local como si fuera un instante real.
+- `is_today`: `true` si la entrega es hoy en la **fecha local del negocio**, así que la app no debe
+  recalcularlo.
+- `days_remaining` / `is_overdue`: igual que en §3b.3 (0 = hoy, negativo = vencida). Permiten pintar
+  en rojo «Entrega vencida hace 2 días».
+- `customer_name` / `customer_phone`: si la venta no tiene cliente registrado se usan los del
+  contacto capturado en el pedido (`contact_info`) y, si tampoco hay, `"Cliente invitado"` / `null`.
+- `shipping_address` y `notes` pueden venir `null`; `notes` es la nota del pedido.
+- `status` es siempre `por_entregar` (solo informativo).
+- La lista **no** está paginada y **no** incluye ventas `por_entregar` sin fecha de entrega.
+- Para cobrar el saldo pendiente, la app usa `POST /transactions/{id}/payments` (§8). **No** existe
+  todavía un endpoint móvil que cambie el estatus de la venta a `entregado`: ese cierre se hace desde
+  la web, así que la app debe mostrar «Cobrar saldo» y dejar el cambio de estatus para después.
+
+### 3b.5 Pendientes conocidos del inicio
+
+- El controlador responde `JsonResponse` con **arrays crudos** (todavía sin capa de `JsonResource`): los
+  nombres y tipos de campo de esta sección son el contrato; si se agrega una capa de Resources habrá
+  que mantenerlos idénticos.
+- No hay endpoint móvil para **cerrar la entrega** (`por_entregar` → `entregado`) ni para cancelar
+  apartados: se hacen desde la web.
+- El inicio no pagina ni cachea; si en el futuro se agrega caché se respetará el mismo
+  `generated_at` para que la app pueda detectar datos viejos.
 
 ## 4. Catálogo (POS)
 
@@ -1967,6 +2274,11 @@ TOKEN=$(curl -s -X POST "$API/auth/login" -H "Accept: application/json" \
 # 2. Contexto y permisos
 curl -s "$API/auth/me" -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" | jq
 
+# 2b. Inicio de la app: KPIs, alertas y caja en una sola llamada
+curl -s "$API/dashboard" -H "Authorization: Bearer $TOKEN" | jq
+curl -s "$API/dashboard/expiring-layaways?days=3" -H "Authorization: Bearer $TOKEN" | jq '.data'
+curl -s "$API/dashboard/upcoming-deliveries?days=7" -H "Authorization: Bearer $TOKEN" | jq '.data'
+
 # 3. Catálogo del POS
 curl -s "$API/catalog/products?search=filtro" -H "Authorization: Bearer $TOKEN" | jq '.data[0]'
 
@@ -2074,6 +2386,7 @@ en silencio (y para no inventar pantallas que el backend todavía no puede alime
 | 2026-09-20 | **Correcciones P2 de la app móvil (D2):** el catálogo §12 incluye `payment_not_approved` ("Solo puedes solicitar facturas de pagos aprobados."), el código con el que se rechaza la factura de un pago que no está aprobado (los `pending`/`rejected` del historial sí traen `id`, pero no son facturables). | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B5):** el corte de caja ya es imprimible. Nuevo `GET /cash-register-sessions/{id}/receipt` (`pos.access`, `template_id` opcional) que devuelve el corte **listo para reimprimir**, incluido el de un turno cerrado hace días: `session`, `summary` (las cifras congeladas del cierre), la plantilla usada y las `operations` (mismo formato que §10). La plantilla se resuelve como `template_id` → plantilla del negocio con contexto `cash_register` (nuevo valor del enum, elegible en la web) → **plantilla incorporada** del servidor (`CashRegisterCutTemplate`, `template.builtin = true`). Además `data_source_type = cash_register_session` entra en `POST /print/bluetooth-payload`, `POST /print/payload` y `POST /print/ticket-html` (`PrintDataSourceResolver`), con las variables nuevas `{{corte.*}}`. Cobertura: dos casos nuevos en `CashRegisterCloseApiTest` (corte cerrado con la plantilla incorporada y corte con la plantilla del negocio, incluido el print por origen). | 4 ✅ |
 | 2026-09-20 | **Cierre de decisiones de alcance (D6, D7, D8):** se quedan **como están** y quedan escritos (§13b) para que ningún cliente los asuma: (D6) `PUT /branch/switch/{id}` sigue siendo **global** (`users.branch_id`, no por sesión/token); (D7) `POST /transactions/{id}/cancel` **no** acepta motivo escrito; (D8) **no** hay `GET /profile/sessions` (solo cerrar las demás con contraseña). Se resumen también en §8 y §11b.1. | 4 ✅ |
+| 2026-10-03 | **Inicio de la app implementado (bloque §3b):** `GET /dashboard`, `GET /dashboard/expiring-layaways?days=` y `GET /dashboard/upcoming-deliveries?days=`. La pantalla se resuelve con **una sola llamada** y cada bloque se autoriza con su propio permiso (`dashboard.see_sales`, `dashboard.see_layaways`, `dashboard.see_orders`, `dashboard.see_outstanding_balances`, `dashboard.see_inventory_details`, `services.orders.access`); un bloque sin permiso viaja en **`null`** (nunca desaparece) y `cash_register` viaja **siempre** con la sesión del usuario. Las cifras de ventas salen de `SalesDashboardService` (mismas que la web) y el stock, la deuda y las órdenes de `DashboardMetricsService`; las listas de alertas usan `DashboardAlertService` con ventana `days` (**1-30, por defecto 3**), incluyen las fechas **ya vencidas** y traen `days_remaining`, `is_overdue` e `is_today` calculados en el servidor con la zona horaria del negocio. `generated_at` y `delivery_date` en **ISO-8601 UTC** (ojo: `delivery_date` se guarda como día, no como instante real). Cobertura: `tests/Feature/Api/V1/DashboardApiTest.php` (8 casos, 114 aserciones). Piezas: `Api\V1\Dashboard\DashboardController`, `App\Actions\Dashboard\BuildMobileDashboardAction`, `App\Services\Dashboard\{DashboardMetricsService,DashboardAlertService}` y 3 Form Requests. | 4b ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

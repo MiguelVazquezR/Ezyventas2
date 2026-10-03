@@ -203,6 +203,39 @@ esas dos; si no hay ninguna, se muestra un estado vacío con el mensaje del mód
   devuelve a la primera pestaña disponible con el mensaje del servidor.
 - El badge de la pestaña **Caja** muestra un punto pulsante cuando hay una sesión abierta.
 
+### 4.2 Pantalla de inicio (dashboard)
+
+Es la primera pantalla después del login. **Todo se arma con una sola llamada**: `GET /dashboard`
+(contrato §3b de `01-contrato-api-v1.md`), nunca una llamada por tarjeta.
+
+| Tarjeta | Se dibuja si | Al tocarla |
+|---|---|---|
+| **Venta de hoy** + ticket promedio | `sales` no es `null` | Historial de ventas del día (contrato §8) |
+| **Tendencia semanal** (7 días, lunes a domingo) | `sales` no es `null` | — |
+| **Apartados por vencer** (`expiring_count`) | `layaways` no es `null` | `GET /dashboard/expiring-layaways?days=3` |
+| **Pedidos por entregar** (`upcoming_deliveries_count`) | `orders` no es `null` | `GET /dashboard/upcoming-deliveries?days=3` |
+| **Saldo por cobrar** (`total_customer_debt`) | `receivables` no es `null` | Listado de clientes del contrato |
+| **Inventario** (bajo stock / agotado) | `inventory` no es `null` | Catálogo (pestaña Vender) con la búsqueda del artículo |
+| **Órdenes de servicio** por estatus | `service_orders` no es `null` | Pestaña Órdenes con el filtro del estatus |
+| **Barra de caja** | siempre | Pestaña Caja (abrir turno si no hay sesión) |
+
+Reglas:
+- Un bloque en `null` **no** se dibuja: el usuario no tiene ese permiso. Nunca mostrar la tarjeta en
+  cero, porque «0 pendientes» y «sin permiso» son cosas distintas.
+- Permisos de esta pantalla: `dashboard.see_sales`, `dashboard.see_layaways`, `dashboard.see_orders`,
+  `dashboard.see_outstanding_balances`, `dashboard.see_inventory_details` y `services.orders.access`
+  (el detalle está en §3b.1 del contrato).
+- `cash_register` viaja **siempre**: si `has_open_session` es `false`, la barra de caja cambia a
+  «Abrir caja» y el POS exige abrir turno antes de cobrar (§7.6).
+- Los contadores de las tarjetas se calculan con la **misma ventana** (`days=3`) que usa el listado
+  al abrirse, así que el número de la tarjeta siempre coincide con el largo de la lista.
+- `days_remaining`, `is_overdue` e `is_today` los calcula el **servidor** con la zona horaria del
+  negocio: la app solo los pinta («Vence hoy», «Vencido hace 2 días»).
+- `generated_at` alimenta el «Actualizado hace un momento» de la cabecera; al hacer pull-to-refresh
+  se vuelve a pedir `GET /dashboard` completo.
+- Todo es de la **sucursal activa** (`users.branch_id`): al cambiar de sucursal el inicio se recarga
+  como cualquier otro listado.
+
 ---
 
 ## 5. Autenticación, sesión y permisos
@@ -738,6 +771,25 @@ servidor) y se envía el mismo ticket por WhatsApp; se **cierra la caja desde el
 coincide con el que muestra la web (total esperado, contado, diferencia y saldos bancarios
 conciliados); se puede cambiar de sucursal, editar el perfil con foto, cambiar la contraseña, cerrar
 las demás sesiones, ver la suscripción y abrir soporte.
+
+### Fase 4b — Inicio (dashboard del teléfono) — ✅ IMPLEMENTADA (3 oct 2026)
+Pantalla de inicio: venta del día y ticket promedio, tendencia semanal, apartados por vencer, pedidos
+por entregar, saldo por cobrar de los clientes, inventario con bajo stock y órdenes de servicio por
+estatus, más el estado de la caja del usuario.
+Endpoints listos: `GET /dashboard`, `GET /dashboard/expiring-layaways?days=` y
+`GET /dashboard/upcoming-deliveries?days=` (contrato §3b).
+La pantalla se resuelve con **una sola llamada** y cada bloque se autoriza con su propio permiso
+(`dashboard.see_sales`, `dashboard.see_layaways`, `dashboard.see_orders`,
+`dashboard.see_outstanding_balances`, `dashboard.see_inventory_details` y `services.orders.access`);
+un bloque sin permiso viaja en `null`. Las cifras de ventas salen de `SalesDashboardService` y el
+estado de caja de `CashRegisterSessionQueryService`, los mismos servicios de la web, así que el
+inicio del teléfono y el dashboard web **nunca** se contradicen.
+Tests: `tests/Feature/Api/V1/DashboardApiTest.php` (8 casos, 114 aserciones).
+✅ Criterio cumplido: al abrir la app se ve en una sola pantalla cómo va el día (venta, ticket
+promedio y semana), qué apartados están por vencer, qué pedidos hay que entregar, cuánto deben los
+clientes, qué artículos están bajos de stock, cómo van las órdenes de servicio y si hay turno de caja
+abierto; al tocar las tarjetas de apartados o de entregas se abre el listado con la fecha y los días
+restantes ya calculados por el servidor.
 
 ### Fase 5 — Offline y sincronización
 SQLite local, outbox, `sync/manifest|pull|push`, pantalla de pendientes y sobreventa.
