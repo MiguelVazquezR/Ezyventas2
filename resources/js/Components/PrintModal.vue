@@ -55,6 +55,9 @@ const {
 // WhatsApp (ticket por wa.me)
 const {
     enviarTicketWhatsApp,
+    enviarAbonoWhatsApp,
+    enviarOrderWhatsApp,
+    enviarOrderPaymentWhatsApp,
 } = useWhatsAppTicket();
 
 // --- Estado de envío por WhatsApp ---
@@ -66,8 +69,25 @@ const whatsappCustomerId = ref(null);
 const whatsappPhone = ref('');
 const whatsappPhoneError = ref(null);
 
+// Un dataSource tipo 'abono' trae el payload del ticket de abono ya listo.
+const isAbono = computed(() => props.dataSource?.type === 'abono');
+
+// Pago de pedido: el ticket (TICKET DE PEDIDO con pago) llega en el payload.
+const isOrderPayment = computed(() => props.dataSource?.type === 'order_payment');
+
+// Fuente de datos para imprimir: los abonos se resuelven a la venta (abono a
+// una venta) o a la ficha del cliente (abono general).
+const printSource = computed(() => {
+    if (isAbono.value || isOrderPayment.value) {
+        return props.dataSource?.transaction_id
+            ? { type: 'transaction', id: props.dataSource.transaction_id }
+            : { type: 'customer', id: props.dataSource?.customer_id };
+    }
+    return { type: props.dataSource?.type, id: props.dataSource?.id };
+});
+
 const canSendWhatsApp = computed(() => {
-    return props.dataSource && ['pos', 'transaction'].includes(props.dataSource.type);
+    return props.dataSource && ['pos', 'transaction', 'abono', 'order', 'order_payment'].includes(props.dataSource.type);
 });
 
 const hasWhatsAppCustomer = computed(() => !!whatsappCustomerId.value);
@@ -80,12 +100,25 @@ const handleSendWhatsApp = async () => {
     whatsappPhoneError.value = null;
 
     try {
-        const response = await axios.post(route('print.whatsapp-ticket'), {
-            data_source_type: props.dataSource.type,
-            data_source_id: props.dataSource.id,
-        });
+        let ticket = null;
+        let customer_phone = null;
+        let customer_id = null;
 
-        const { ticket, customer_phone, customer_id } = response.data;
+        if (['abono', 'order_payment'].includes(props.dataSource.type)) {
+            // El payload del ticket ya viene listo desde el backend.
+            ticket = props.dataSource.payload;
+            customer_phone = props.dataSource.customer_phone || null;
+            customer_id = props.dataSource.customer_id || null;
+        } else {
+            const response = await axios.post(route('print.whatsapp-ticket'), {
+                data_source_type: props.dataSource.type,
+                data_source_id: props.dataSource.id,
+            });
+
+            ticket = response.data.ticket;
+            customer_phone = response.data.customer_phone;
+            customer_id = response.data.customer_id;
+        }
 
         if (!ticket) {
             toast.add({
@@ -119,7 +152,19 @@ const handleSendWhatsApp = async () => {
 };
 
 const openWhatsAppWithTicket = (phone) => {
-    const win = enviarTicketWhatsApp(phone, whatsappTicketData.value);
+    // Se elige el builder según el tipo real del ticket (kind), no según el
+    // dataSource, para que los reenvíos de pedidos también usen el correcto.
+    const kind = whatsappTicketData.value?.kind;
+    let win;
+    if (kind === 'abono') {
+        win = enviarAbonoWhatsApp(phone, whatsappTicketData.value);
+    } else if (kind === 'order_payment') {
+        win = enviarOrderPaymentWhatsApp(phone, whatsappTicketData.value);
+    } else if (kind === 'order') {
+        win = enviarOrderWhatsApp(phone, whatsappTicketData.value);
+    } else {
+        win = enviarTicketWhatsApp(phone, whatsappTicketData.value);
+    }
     if (!win) {
         toast.add({
             severity: 'warn',
@@ -263,8 +308,8 @@ const loadTicketHtml = async () => {
         const job = printJobs.value[0];
         const response = await axios.post(route('print.ticket-html'), {
             template_id: job.template.id,
-            data_source_type: props.dataSource.type,
-            data_source_id: props.dataSource.id,
+            data_source_type: printSource.value.type,
+            data_source_id: printSource.value.id,
         });
         ticketHtml.value = response.data.html;
         showPreview.value = true;
@@ -318,7 +363,7 @@ const downloadHtml = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ticket-${props.dataSource.type}-${props.dataSource.id}.html`;
+    a.download = `ticket-${printSource.value.type}-${printSource.value.id}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -342,8 +387,8 @@ const printBluetooth = async () => {
             try {
                 const response = await axios.post(route('print.bluetooth-payload'), {
                     template_id: job.template.id,
-                    data_source_type: props.dataSource.type,
-                    data_source_id: props.dataSource.id,
+                    data_source_type: printSource.value.type,
+                    data_source_id: printSource.value.id,
                     open_drawer: openDrawer.value,
                 });
 
@@ -390,8 +435,8 @@ const printViaPlugin = async () => {
             try {
                 const payload = {
                     template_id: job.template.id,
-                    data_source_type: props.dataSource.type,
-                    data_source_id: props.dataSource.id,
+                    data_source_type: printSource.value.type,
+                    data_source_id: printSource.value.id,
                 };
 
                 if (job.template.type === 'etiqueta') {
@@ -462,11 +507,12 @@ const evaluateAutoSelection = () => {
     if (!props.visible) return;
     if (printJobs.value.length > 0) return;
 
-    if (props.availableTemplates && props.availableTemplates.length > 0) {
-        if (props.availableTemplates.length === 1) {
-            addJob(props.availableTemplates[0]);
+    const templates = props.availableTemplates || [];
+    if (templates.length > 0) {
+        if (templates.length === 1) {
+            addJob(templates[0]);
         } else {
-            const autoSelectTemplates = props.availableTemplates.filter(t => t.is_default || t.is_default === 1);
+            const autoSelectTemplates = templates.filter(t => t.is_default || t.is_default === 1);
             if (autoSelectTemplates.length > 0) {
                 autoSelectTemplates.forEach(t => addJob(t));
             }

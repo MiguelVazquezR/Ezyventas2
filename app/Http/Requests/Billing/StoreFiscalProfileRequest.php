@@ -17,8 +17,7 @@ class StoreFiscalProfileRequest extends FormRequest
     /**
      * Validation rules for creating a new FiscalProfile.
      *
-     * Mirrors the emitter fields from SaveBillingSettingsRequest
-     * but maps them to the FiscalProfile column names.
+     * Emitter fields mapped to the FiscalProfile column names.
      */
     public function rules(): array
     {

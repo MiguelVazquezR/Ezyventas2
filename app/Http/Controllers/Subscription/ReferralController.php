@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Subscription;
 
+use App\Actions\Referral\ExpireStaleTrialReferralsAction;
 use App\Actions\Referral\GenerateReferralCodeAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Subscription\UpdateReferrerBankAccountRequest;
 use App\Models\ReferralCode;
 use App\Models\ReferralSettings;
+use App\Models\ReferralUsage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +23,12 @@ class ReferralController extends Controller
         $user = Auth::user();
         $subscription = $user->branch->subscription;
 
+        // Pasar a 'expired' los referidos en prueba cuya prueba terminó sin pago.
+        $referralCodeId = $user->referralCode?->id;
+        if ($referralCodeId) {
+            app(ExpireStaleTrialReferralsAction::class)->execute([$referralCodeId]);
+        }
+
         // Calcular costo mensual actual de la suscripción
         $subscriptionCost = $subscription->getCurrentMonthlyCost();
         $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
@@ -30,6 +38,11 @@ class ReferralController extends Controller
                                 'referredSubscription' => fn($q) => $q->select('id', 'commercial_name')
                                     ->withCount(['versions as active_versions_count' => fn($v) =>
                                         $v->where('end_date', '>=', now()->startOfDay())
+                                    ])
+                                    ->with(['versions' => fn($v) =>
+                                        $v->select('id', 'subscription_id', 'end_date')
+                                          ->latest('end_date')
+                                          ->limit(1)
                                     ]),
                                 'payment',
                             ])
@@ -38,9 +51,18 @@ class ReferralController extends Controller
                             ->map(fn($r) => [
                                 ...$r->toArray(),
                                 'referred_subscription_active' => $r->referredSubscription && $r->referredSubscription->active_versions_count > 0,
+                                // Fecha en que termina la prueba (para el estado "De prueba").
+                                'trial_ends_at' => $r->reward_status === 'trial' && $r->referredSubscription
+                                    ? $r->referredSubscription->versions->first()?->end_date
+                                    : null,
                             ]);
 
-        $activeReferralsCount = $referrals->where('referred_subscription_active', true)->count();
+        // Solo cuentan como "activos" los referidos que ya hicieron su primer
+        // pago (pending/paid) y siguen con suscripción activa.
+        $activeReferralsCount = $referrals
+            ->whereIn('reward_status', [ReferralUsage::STATUS_PENDING, ReferralUsage::STATUS_PAID])
+            ->where('referred_subscription_active', true)
+            ->count();
 
         return Inertia::render('Subscription/Referral/Index', [
             'referralCode'              => $user->referralCode,

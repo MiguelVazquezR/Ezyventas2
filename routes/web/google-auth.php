@@ -25,7 +25,10 @@ Route::get('/auth/google/callback', function () {
         $user = User::where('google_id', $googleUser->id)->first();
 
         if ($user) {
-            // 2. Si existe, lo logueamos
+            // 2. Si existe, lo logueamos (Google ya validó su correo)
+            if (! $user->hasVerifiedEmail()) {
+                $user->markEmailAsVerified();
+            }
             Auth::login($user);
             return redirect('/dashboard'); // Redirige a tu panel principal
         }
@@ -35,9 +38,11 @@ Route::get('/auth/google/callback', function () {
 
         if ($user) {
             // 4. Si existe el email, vinculamos la cuenta (agregamos el google_id y avatar)
+            //    y marcamos su correo como verificado porque Google ya lo validó.
             $user->update([
                 'google_id' => $googleUser->id,
-                'avatar' => $googleUser->avatar
+                'avatar' => $googleUser->avatar,
+                'email_verified_at' => $user->email_verified_at ?? now(),
             ]);
             Auth::login($user);
             return redirect('/dashboard');
@@ -75,10 +80,12 @@ Route::get('/auth/google/callback', function () {
             $newUser = $creator->create($input);
 
             // Ahora, actualizamos al usuario recién creado con su Google ID y Avatar
-            // (ya que CreateNewUser no sabe nada de Google)
+            // (ya que CreateNewUser no sabe nada de Google). Google ya validó el
+            // correo, así que marcamos la cuenta como verificada para no pedir código.
             $newUser->update([
                 'google_id' => $googleUser->id,
                 'avatar' => $googleUser->avatar,
+                'email_verified_at' => now(),
             ]);
 
             // Logueamos al nuevo usuario

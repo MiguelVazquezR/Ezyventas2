@@ -1,11 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
-import { useConfirm } from 'primevue/useconfirm';
 import { useInvoiceTaxes } from '@/Composables/useInvoiceTaxes';
 import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
 import EmisorSection from './EmisorSection.vue';
+import StampOldDateDialog from './StampOldDateDialog.vue';
 import SaleSection from './SaleSection.vue';
 import PpdSaleSection from './Sections/PpdSaleSection.vue';
 import ReceptorSection from './ReceptorSection.vue';
@@ -27,8 +27,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['submit']);
-
-const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Normalize collections
@@ -71,6 +69,11 @@ const form = useForm({
         ? (inv?.tipo_comprobante || 'I')
         : (new URLSearchParams(window.location.search).get('tipo') || 'I'),
     customer_id: isEdit ? (inv?.customer_id || null) : null,
+    // Fecha de emisión del CFDI (editable; regla SAT: máximo 72 horas). En
+    // edit se muestra la fecha con la que se guardó (issued_at ?? created_at).
+    issued_at: isEdit
+        ? (parsePagoFecha(inv?.issued_at) || parsePagoFecha(inv?.created_at) || new Date())
+        : new Date(),
     // Venta del punto de venta relacionada (1:1) y modo "precios con IVA incluido"
     transaction_id: isEdit ? (inv?.transaction_id || null) : null,
     prices_include_iva: isEdit ? !!(inv?.prices_include_iva) : false,
@@ -369,31 +372,26 @@ form.transform((data) => {
 // Primero guarda los cambios del formulario y, al guardar, timbra con ellos.
 // ──────────────────────────────────────
 const stampPhase = ref(null); // null | 'saving' | 'stamping'
+const showOldStampDialog = ref(false);
 
 // Un borrador con más de 72 horas ya no puede timbrarse con su fecha de
-// emisión original (regla del SAT). Si se confirma, el CFDI se emite con la
-// fecha y hora de hoy.
+// emisión original (regla del SAT). Se evalúa sobre la fecha de emisión
+// actual del formulario (la que se enviaría al timbrar).
 const isOldDraft = computed(() => {
     if (!props.invoice || props.invoice.status !== 'borrador') return false;
-    const createdAt = new Date(props.invoice.created_at);
-    if (Number.isNaN(createdAt.getTime())) return false;
-    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+    const source = form.issued_at
+        || parsePagoFecha(props.invoice.issued_at)
+        || parsePagoFecha(props.invoice.created_at);
+    const d = new Date(source);
+    if (Number.isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60) > 72;
 });
 
 function stampInvoice() {
     if (stampPhase.value || form.processing) return;
 
     if (isOldDraft.value) {
-        confirm.require({
-            message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, se guardarán los cambios y el CFDI se emitirá con la fecha y hora de hoy.',
-            header: 'Fecha de emisión vencida',
-            icon: 'pi pi-exclamation-triangle',
-            acceptLabel: 'Timbrar con fecha de hoy',
-            rejectLabel: 'Cancelar',
-            rejectClass: 'p-button-outlined',
-            acceptClass: 'p-button-warning',
-            accept: () => saveThenStamp(true),
-        });
+        showOldStampDialog.value = true;
         return;
     }
 
@@ -443,6 +441,26 @@ const submit = (draft = false) => {
     </div>
 
     <form v-else @submit.prevent="submit(false)" class="tesla-form mt-6 flex flex-col md:flex-row gap-6 items-start relative">
+
+        <!-- Mobile quick-nav (phones & small tablets): the sidebar is hidden
+             on small screens, so this sticky chip bar replaces it -->
+        <div class="md:hidden sticky top-16 z-30 -mx-4 px-4 py-2 bg-white/85 dark:bg-[#121212]/85 backdrop-blur-xl border-b border-slate-100 dark:border-neutral-800 w-[calc(100%+2rem)]">
+            <div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button
+                    v-for="section in formSections"
+                    :key="section.id"
+                    type="button"
+                    @click="scrollTo(section.id)"
+                    class="shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-all duration-200 border"
+                    :class="activeSection === section.id
+                        ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white'
+                        : 'bg-slate-50 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400 border-slate-100 dark:border-neutral-800 hover:text-slate-900 dark:hover:text-white'"
+                >
+                    {{ section.label }}
+                </button>
+            </div>
+        </div>
+
         <!-- Sidebar -->
         <FormNavigationSidebar :sections="formSections" :activeSection="activeSection" @scrollTo="scrollTo" />
 
@@ -531,14 +549,14 @@ const submit = (draft = false) => {
             />
 
             <!-- ═══ Submit buttons — Tesla dock ═══ -->
-            <div class="sticky bottom-4 z-20 flex justify-center">
-                <div class="inline-flex items-center gap-3 rounded-full p-2 border border-slate-100 dark:border-neutral-800 bg-white/80 dark:bg-[#121212]/80 backdrop-blur-xl shadow-lg shadow-slate-200/40 dark:shadow-black/40">
+            <div class="sticky bottom-4 z-20 flex justify-center px-2 sm:px-0">
+                <div class="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 rounded-3xl sm:rounded-full p-2 sm:p-2.5 border border-slate-100 dark:border-neutral-800 bg-white/90 dark:bg-[#121212]/90 backdrop-blur-xl shadow-lg shadow-slate-200/40 dark:shadow-black/40">
                     <template v-if="mode === 'create'">
-                        <Button type="submit" label="Guardar como prefactura" icon="pi pi-file" severity="primary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent" />
-                        <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? stampButtonTooltip : ''" />
+                        <Button type="submit" label="Guardar como prefactura" icon="pi pi-file" severity="primary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent !justify-center w-full sm:w-auto" />
+                        <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !justify-center w-full sm:w-auto', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? stampButtonTooltip : ''" />
                     </template>
                     <template v-else>
-                        <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
+                        <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !justify-center w-full sm:w-auto" />
                         <Button
                             type="button"
                             :label="stampPhase === 'saving' ? 'Guardando cambios...' : stampPhase === 'stamping' ? 'Timbrando factura...' : 'Timbrar factura'"
@@ -548,7 +566,7 @@ const submit = (draft = false) => {
                             :loading="!!stampPhase"
                             :disabled="form.processing || !!stampPhase"
                             @click="stampInvoice"
-                            class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent"
+                            class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent !justify-center w-full sm:w-auto"
                         />
                     </template>
                 </div>
@@ -558,5 +576,12 @@ const submit = (draft = false) => {
             <div class="h-[50vh] md:h-[5vh]" aria-hidden="true"></div>
 
         </div>
+
+        <!-- Modal: fecha de emisión vencida (>72 h) → timbrar hoy / editar fecha -->
+        <StampOldDateDialog
+            v-model:visible="showOldStampDialog"
+            @stamp-today="saveThenStamp(true)"
+            @edit="showOldStampDialog = false; scrollTo('emisor')"
+        />
     </form>
 </template>

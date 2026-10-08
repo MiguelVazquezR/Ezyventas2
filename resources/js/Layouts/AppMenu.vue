@@ -249,6 +249,12 @@ const adminModel = ref([
                 routeName: 'admin.suggestions.*'
             },
             {
+                label: 'Tutoriales',
+                icon: 'pi pi-play-circle',
+                to: route('admin.tutorials.index'),
+                routeName: 'admin.tutorials.*'
+            },
+            {
                 label: 'Referidos',
                 icon: 'pi pi-users',
                 items: [

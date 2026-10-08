@@ -17,6 +17,7 @@ use App\AiTools\Registrars\ServiceOrderTools;
 use App\AiTools\Registrars\ServiceTools;
 use App\AiTools\Registrars\StaffPerformanceTools;
 use App\AiTools\Registrars\SuggestionTools;
+use App\AiTools\Registrars\SubscriptionTools;
 use App\AiTools\Registrars\ToolRegistrar;
 use App\AiTools\Registrars\TransactionTools;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
@@ -90,6 +91,7 @@ class EzyVentasToolProvider implements AiToolProvider
             new ExportTools(),
             new SuggestionTools(),
             new BusinessHealthTools(),
+            new SubscriptionTools(),
         ];
     }
 }

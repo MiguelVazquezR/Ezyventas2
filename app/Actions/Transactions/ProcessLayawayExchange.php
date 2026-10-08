@@ -66,7 +66,7 @@ class ProcessLayawayExchange
                 if ($retQty > 0) {
                     $itemModel = $originalItem->itemable ?? (class_exists($originalItem->itemable_type) ? $originalItem->itemable_type::find($originalItem->itemable_id) : null);
                     if ($itemModel) {
-                        $itemModel->releaseLayawayStock($originalTransaction->branch_id, $retQty, $user, "Liberación de reserva por modificación apartado {$originalTransaction->folio}");
+                        $itemModel->releaseLayawayStock($originalTransaction->branch_id, $retQty, $user, "Apartado modificado #{$originalTransaction->folio} — liberación de reserva", ['transaction_id' => $originalTransaction->id]);
                     }
                 }
             }

@@ -96,6 +96,45 @@ const isLoadingModal = ref(false);
 const modalItems = ref([]);
 const activeModalType = ref('layaways'); // 'layaways' | 'deliveries'
 
+// --- Filtros dentro del modal de vencimientos (tipo y cliente) ---
+const modalFilter = ref('todos');
+const modalFilterOptions = [
+    { label: 'Todos', value: 'todos' },
+    { label: 'Créditos', value: 'credito' },
+    { label: 'Apartados', value: 'apartado' },
+];
+
+const customerFilter = ref(null);
+
+// Solo los clientes que aparecen en la lista actual de vencimientos
+const customerFilterOptions = computed(() => {
+    const seen = new Map();
+    modalItems.value.forEach((item) => {
+        const value = item.customer_id ?? 'general';
+        if (!seen.has(value)) {
+            seen.set(value, { label: item.customer_name || 'Público en General', value });
+        }
+    });
+    return Array.from(seen.values()).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+});
+
+const filteredModalItems = computed(() => {
+    // Los filtros solo aplican al modal de vencimientos; las entregas siempre muestran todo.
+    if (activeModalType.value !== 'layaways') return modalItems.value;
+
+    let items = modalItems.value;
+
+    if (modalFilter.value !== 'todos') {
+        items = items.filter((item) => item.type === modalFilter.value);
+    }
+
+    if (customerFilter.value) {
+        items = items.filter((item) => (item.customer_id ?? 'general') === customerFilter.value);
+    }
+
+    return items;
+});
+
 const modalTitle = computed(() => {
     return activeModalType.value === 'layaways' 
         ? 'Vencimientos próximos (Apartados y Créditos)' 
@@ -104,6 +143,8 @@ const modalTitle = computed(() => {
 
 const fetchExpiringLayaways = async () => {
     activeModalType.value = 'layaways';
+    modalFilter.value = 'todos';
+    customerFilter.value = null;
     isInfoModalVisible.value = true;
     isLoadingModal.value = true;
     modalItems.value = [];
@@ -120,6 +161,8 @@ const fetchExpiringLayaways = async () => {
 
 const fetchUpcomingDeliveries = async () => {
     activeModalType.value = 'deliveries';
+    modalFilter.value = 'todos';
+    customerFilter.value = null;
     isInfoModalVisible.value = true;
     isLoadingModal.value = true;
     modalItems.value = [];
@@ -598,7 +641,31 @@ const getExpirationSeverity = (days) => {
                     </div>
                 </div>
 
-                <DataTable :value="modalItems" responsiveLayout="scroll" paginator :rows="5" 
+                <!-- Filtros (tipo y cliente) debajo de la guía -->
+                <div v-if="activeModalType === 'layaways'" class="mb-6 flex flex-col sm:flex-row gap-3">
+                    <SelectButton v-model="modalFilter" :options="modalFilterOptions" optionLabel="label" optionValue="value" :allowEmpty="false" class="w-full sm:w-auto"
+                        :pt="{
+                            root: { class: 'bg-gray-50 dark:bg-[#1a1a1a] rounded-full p-1 border border-gray-100 dark:border-[#3a3a3a] flex' },
+                            button: ({ context }) => ({
+                                class: [
+                                    'rounded-full px-4 py-1.5 transition-colors focus:ring-0 !border-none text-[11px] font-bold uppercase tracking-widest flex-1 justify-center',
+                                    context.active ? '!bg-primary-500 !text-white' : '!bg-transparent !text-gray-500 dark:!text-gray-400 hover:!text-gray-700 dark:hover:!text-gray-200'
+                                ]
+                            })
+                        }" />
+
+                    <Select v-model="customerFilter" :options="customerFilterOptions" optionLabel="label" optionValue="value" placeholder="Todos los clientes" showClear filter class="w-full sm:w-72"
+                        :pt="{
+                            root: { class: 'h-10 w-full min-w-0 !rounded-xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors flex items-center' },
+                            label: { class: '!text-sm !text-gray-900 dark:!text-white' },
+                            clearIcon: { class: '!text-gray-400' },
+                            dropdown: { class: '!bg-transparent !text-gray-500 dark:!text-gray-400' },
+                            overlay: { class: 'dark:!bg-[#232323] !rounded-2xl !border-gray-100 dark:!border-[#3a3a3a]' }
+                        }" />
+                </div>
+
+                <div v-if="filteredModalItems.length > 0">
+                <DataTable :value="filteredModalItems" responsiveLayout="scroll" paginator :rows="5" 
                     :pt="{
                         root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
                         headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
@@ -670,6 +737,15 @@ const getExpirationSeverity = (days) => {
                         </template>
                     </Column>
                 </DataTable>
+                </div>
+
+                <div v-else class="flex flex-col items-center justify-center py-16 text-center">
+                    <div class="w-16 h-16 rounded-full bg-gray-100 dark:bg-[#1a1a1a] flex items-center justify-center mb-4">
+                        <i class="pi pi-filter !text-2xl text-gray-400"></i>
+                    </div>
+                    <h3 class="text-xl font-light text-gray-900 dark:text-white mb-2">Sin resultados</h3>
+                    <p class="text-sm text-gray-500 max-w-xs">No hay vencimientos que coincidan con los filtros seleccionados.</p>
+                </div>
             </div>
 
             <div v-else class="flex flex-col items-center justify-center py-16 text-center">

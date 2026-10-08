@@ -7,6 +7,7 @@ use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\PacAccount;
 use App\Models\Billing\StampPurchase;
 use App\Enums\StampPurchaseStatus;
+use App\Services\Billing\PacCallLogger;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -30,6 +31,10 @@ use Illuminate\Support\Facades\Log;
  */
 class SWUserService
 {
+    public function __construct(
+        private readonly PacCallLogger $pacCallLogger,
+    ) {}
+
     /**
      * Create a SW Sapien sub-user account for the given PAC account.
      *
@@ -596,9 +601,40 @@ class SWUserService
             throw new \RuntimeException('La cuenta no tiene credenciales configuradas.');
         }
 
-        $token = $this->authenticateWithCredentials($account->login_email, $account->password);
+        $start = microtime(true);
 
-        return $this->getBalanceWithToken($token);
+        try {
+            $token = $this->authenticateWithCredentials($account->login_email, $account->password);
+            $balance = $this->getBalanceWithToken($token);
+        } catch (\Throwable $e) {
+            $this->pacCallLogger->log(
+                null,
+                $account->id,
+                'balance',
+                ['login_email' => $account->login_email],
+                null,
+                ['error' => 'request_failed'],
+                $start,
+            );
+
+            throw $e;
+        }
+
+        $this->pacCallLogger->log(
+            null,
+            $account->id,
+            'balance',
+            ['login_email' => $account->login_email],
+            200,
+            [
+                'stampsBalance'  => $balance['stampsBalance'] ?? null,
+                'stampsAssigned' => $balance['stampsAssigned'] ?? null,
+                'stampsUsed'     => $balance['stampsUsed'] ?? null,
+            ],
+            $start,
+        );
+
+        return $balance;
     }
 
     /**

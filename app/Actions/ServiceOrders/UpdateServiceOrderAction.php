@@ -125,12 +125,12 @@ class UpdateServiceOrderAction
                     if ($diff > 0) {
                         // Necesita MÁS stock del que ya tenía
                         if (method_exists($model, 'deductStock')) {
-                            $model->deductStock($serviceOrder->branch_id, $diff, $user, "Ajuste por refacciones agregadas en O.S. #{$serviceOrder->folio}");
+                            $model->deductStock($serviceOrder->branch_id, $diff, $user, "Ajuste por refacciones agregadas en O.S. #{$serviceOrder->folio}", ['service_order_id' => $serviceOrder->id]);
                         }
                     } else {
                         // Necesita MENOS stock del que tenía (le sobra, se devuelve al inventario)
                         if (method_exists($model, 'restock')) {
-                            $model->restock($serviceOrder->branch_id, abs($diff), $user, "Ajuste por refacciones devueltas en O.S. #{$serviceOrder->folio}");
+                            $model->restock($serviceOrder->branch_id, abs($diff), $user, "Ajuste por refacciones devueltas en O.S. #{$serviceOrder->folio}", ['service_order_id' => $serviceOrder->id]);
                         }
                     }
                 }

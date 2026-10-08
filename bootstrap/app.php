@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\Api\ApiExceptionRenderer;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
 
+        // Mobile API (/api/*) is rate limited: see AppServiceProvider limiters.
+        $middleware->throttleApi();
+
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
@@ -31,14 +35,21 @@ return Application::configure(basePath: dirname(__DIR__))
             'resolve.store' => \App\Http\Middleware\ResolveStore::class,
         ]);
     })
-    ->withExceptions(function (Exceptions $exceptions) {
-        
+    ->withExceptions(function (Exceptions $exceptions): void {
+
+        // Mobile API errors are always JSON (registered first so it wins).
+        (new ApiExceptionRenderer())->register($exceptions);
+
         // 1. Manejar TokenMismatchException (Error 419 / CSRF) explícitamente
         $exceptions->render(function (TokenMismatchException $e, Request $request) {
+            if ($request->is('api/*')) {
+                return null;
+            }
+
             return Inertia::render('Error', [
                 'status' => 419,
                 // MODIFICADO: Pasamos la URL anterior para que el botón 'Recargar' sepa volver al formulario
-                'redirectUrl' => url()->previous() 
+                'redirectUrl' => url()->previous()
             ])
             ->toResponse($request)
             ->setStatusCode(419);
@@ -46,6 +57,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // 2. Manejar excepciones HTTP estándar
         $exceptions->render(function (HttpException $e, Request $request) {
+            // La API responde JSON desde ApiExceptionRenderer.
+            if ($request->is('api/*')) {
+                return null;
+            }
+
             $status = $e->getStatusCode();
 
             // Solo se activa para los códigos de error que queremos personalizar.

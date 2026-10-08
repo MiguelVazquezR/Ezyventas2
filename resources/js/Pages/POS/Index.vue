@@ -361,11 +361,11 @@ const handleOrderSubmit = (orderData) => {
         return;
     }
 
-    const currentSubtotal = cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const itemsDiscountTotal = cartItems.value.reduce((acc, item) => {
-        const base = item.original_price ?? item.price;
-        return acc + ((base - item.price) * item.quantity);
-    }, 0);
+    // Subtotal with the list price of every line and the discount of the cart:
+    // the same rule ShoppingCart uses for a sale, so the three buttons charge
+    // the same (the server recalculates it anyway).
+    const currentSubtotal = cartSubtotal.value;
+    const itemsDiscountTotal = cartSubtotal.value - currentCartTotal.value;
 
     form.reset();
     form.cartItems = mapCartItems();
@@ -376,14 +376,15 @@ const handleOrderSubmit = (orderData) => {
     form.is_order = true;
     form.contact_info = {
         name: orderData.contact_name,
-        phone: orderData.contact_phone
+        phone: orderData.contact_phone,
+        type: posMode.value === 'comandas' ? 'comanda' : 'pedido',
     };
     form.delivery_date = orderData.delivery_date;
     form.shipping_address = orderData.shipping_address;
     form.shipping_cost = orderData.shipping_cost;
     form.notes = orderData.notes;
     form.cash_register_session_id = props.activeSession.id;
-    form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
+    form.total = currentSubtotal - itemsDiscountTotal + parseFloat(orderData.shipping_cost);
 
     form.post(route('pos.store-order'), {
         onSuccess: () => {
@@ -449,6 +450,11 @@ const handleCheckout = (checkoutData) => {
 
 const currentCartTotal = computed(() => {
     return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+});
+
+// Subtotal with list prices (what the cart and the server call `subtotal`).
+const cartSubtotal = computed(() => {
+    return cartItems.value.reduce((acc, item) => acc + ((item.original_price ?? item.price) * item.quantity), 0);
 });
 </script>
 

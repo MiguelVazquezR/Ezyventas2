@@ -9,6 +9,7 @@ import PurchaseStampsModal from './Partials/PurchaseStampsModal.vue';
 import ManifestWizardModal from './Partials/ManifestWizardModal.vue';
 import FiscalProfileFormModal from './Partials/FiscalProfileFormModal.vue';
 import CsdUploadModal from './Partials/CsdUploadModal.vue';
+import TutorialHelp from '@/Components/Tutorial/TutorialHelp.vue';
 
 const props = defineProps({
     fiscalProfiles: Object,
@@ -17,6 +18,8 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    lowStampThreshold: { type: Number, default: 5 },
+    csdExpiryWarningDays: { type: Number, default: 30 },
 });
 
 const { hasPermission } = usePermissions();
@@ -95,6 +98,13 @@ const toggleMenu = (event, profile) => {
     selectedProfileForModal.value = profile;
     const options = [];
 
+    // Editar los datos del emisor (razón social, régimen, CP, email)
+    options.push({
+        label: 'Editar datos fiscales',
+        icon: 'pi pi-pencil',
+        command: () => fiscalProfileFormModalRef.value?.open(profile),
+    });
+
     // Logo
     if (isAccountActive(profile)) {
         options.push({
@@ -151,6 +161,26 @@ const toggleMenu = (event, profile) => {
         },
     });
 
+    // Eliminar emisor (solo cuando NO tiene certificados CSD cargados)
+    if (!profile.certificate_number) {
+        options.push({
+            label: 'Eliminar emisor',
+            icon: 'pi pi-trash',
+            class: 'text-red-500',
+            command: () => {
+                confirm.require({
+                    message: '¿Eliminar este emisor fiscal? Se eliminarán sus datos de forma permanente. Esta acción no se puede deshacer.',
+                    header: 'Eliminar emisor fiscal',
+                    icon: 'pi pi-exclamation-triangle',
+                    acceptLabel: 'Eliminar',
+                    rejectLabel: 'Cancelar',
+                    acceptClass: 'p-button-danger',
+                    accept: () => router.delete(route('billing.settings.destroyFiscalProfile', profile.id)),
+                });
+            },
+        });
+    }
+
     items.value = options;
     menuRef.value?.toggle(event);
 };
@@ -181,14 +211,30 @@ const getStatusLabel = (profile) => {
     return 'Pendiente de activación';
 };
 
+// Days until the CSD expires (negative when already expired).
+const csdDaysLeft = (profile) => {
+    if (!profile.valid_to) return null;
+    const validTo = new Date(`${profile.valid_to}T00:00:00`);
+    if (Number.isNaN(validTo.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((validTo - today) / 86400000);
+};
+
 const getCsdSeverity = (profile) => {
     if (!profile.certificate_number) return 'warn';
-    return 'success';
+    const days = csdDaysLeft(profile);
+    if (days === null) return 'success';
+    if (days <= 0) return 'danger';
+    return days <= props.csdExpiryWarningDays ? 'warn' : 'success';
 };
 
 const getCsdLabel = (profile) => {
     if (!profile.certificate_number) return 'Pendiente';
-    return 'Activo';
+    const days = csdDaysLeft(profile);
+    if (days === null) return 'Activo';
+    if (days <= 0) return 'Vencido';
+    return days <= props.csdExpiryWarningDays ? `Por vencer (${days} días)` : 'Activo';
 };
 
 const getManifestSeverity = (profile) => {
@@ -217,6 +263,12 @@ const formatStamps = (val) => {
     return Number(val).toLocaleString('es-MX');
 };
 
+// Low stamp balance alert (Fase 3, T304).
+const isLowStamps = (profile) =>
+    profile.stamps_available !== null &&
+    profile.stamps_available !== undefined &&
+    profile.stamps_available <= props.lowStampThreshold;
+
 const rowClass = (data) => {
     if (!data.is_active) return 'opacity-50';
     return '';
@@ -244,7 +296,7 @@ const tagPt = {
 </script>
 
 <template>
-    <Head title="Razones sociales" />
+    <Head title="Configuración fiscal" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
@@ -256,9 +308,12 @@ const tagPt = {
                 <!-- Header -->
                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
                     <div>
-                        <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                            Emisores fiscales
-                        </h1>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                                Emisores fiscales
+                            </h1>
+                            <TutorialHelp module="billing" default-section="configuracion-fiscal" />
+                        </div>
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
                             CFDI 4.0 &middot; Administra los RFC's emisores para emitir facturas desde esta cuenta.
@@ -266,12 +321,12 @@ const tagPt = {
                     </div>
 
                     <!-- Header actions -->
-                    <div class="flex items-center gap-3 shrink-0">
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0">
                         <Button
                             label="Agregar emisor fiscal"
                             icon="pi pi-plus"
                             @click="fiscalProfileFormModalRef?.open()"
-                            class="!rounded-xl !text-xs !uppercase !tracking-wider"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider !justify-center w-full sm:w-auto"
                         />
                     </div>
                 </div>
@@ -293,8 +348,81 @@ const tagPt = {
                 </div>
 
                 <!-- ════════════════════════════════════════
-                     DataTable
+                     Mobile card list (phones & small tablets)
                      ════════════════════════════════════════ -->
+                <div class="md:hidden space-y-3">
+                    <div
+                        v-for="profile in fiscalProfiles.data"
+                        :key="profile.id"
+                        class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"
+                        :class="rowClass(profile)"
+                        @click="onRowClick({ data: profile })"
+                    >
+                        <!-- Top: RFC + status -->
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex flex-col gap-1 min-w-0">
+                                <span class="font-mono text-sm font-bold text-gray-900 dark:text-gray-100">{{ profile.rfc }}</span>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{{ profile.razon_social }}</span>
+                            </div>
+                            <Tag :value="getStatusLabel(profile)" :severity="getStatusSeverity(profile)" :pt="tagPt" class="shrink-0" />
+                        </div>
+
+                        <!-- Régimen fiscal -->
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0 shrink-0">Régimen fiscal</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400 text-right truncate min-w-0">{{ profile.regimen_fiscal }} - {{ taxRegimeLabel(profile.regimen_fiscal) }}</span>
+                        </div>
+
+                        <!-- CSD + Manifesto + Timbres -->
+                        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                            <Tag :value="`CSD: ${getCsdLabel(profile)}`" :severity="getCsdSeverity(profile)" :pt="tagPt" />
+                            <Tag v-if="showManifestColumn" :value="`Manifiesto: ${getManifestLabel(profile)}`" :severity="getManifestSeverity(profile)" :pt="tagPt" />
+                            <Tag
+                                v-if="profile.stamps_available !== null && profile.stamps_available !== undefined"
+                                :value="`Timbres: ${formatStamps(profile.stamps_available)}`"
+                                :severity="isLowStamps(profile) ? 'warn' : 'info'"
+                                :pt="tagPt"
+                            />
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="mt-3 pt-3 border-t border-gray-100 dark:border-[#3a3a3a] flex items-center justify-end" @click.stop>
+                            <Button
+                                icon="pi pi-ellipsis-v"
+                                text
+                                rounded
+                                @click.stop="toggleMenu($event, profile)"
+                                class="!w-9 !h-9 !text-gray-500 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
+                                aria-label="Más acciones"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Empty state (mobile) -->
+                    <div v-if="!fiscalProfiles.data || fiscalProfiles.data.length === 0" class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center justify-center py-12 px-4 text-center">
+                        <i class="pi pi-building !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
+                            No se encontraron emisores fiscales. Agrega tu primer RFC para comenzar a facturar.
+                        </p>
+                    </div>
+
+                    <!-- Pagination (mobile) -->
+                    <Paginator
+                        v-if="fiscalProfiles.total > fiscalProfiles.per_page"
+                        :rows="fiscalProfiles.per_page"
+                        :totalRecords="fiscalProfiles.total"
+                        :first="(fiscalProfiles.current_page - 1) * fiscalProfiles.per_page"
+                        :rowsPerPageOptions="[10, 20, 50]"
+                        @page="onPage"
+                        template="PrevPageLink PageLinks NextPageLink"
+                        class="!rounded-2xl !border !border-gray-100 dark:!border-[#3a3a3a] !bg-white dark:!bg-[#232323]"
+                    />
+                </div>
+
+                <!-- ════════════════════════════════════════
+                     DataTable (md+)
+                     ════════════════════════════════════════ -->
+                <div class="hidden md:block">
                 <DataTable
                     :value="fiscalProfiles.data"
                     lazy
@@ -389,12 +517,19 @@ const tagPt = {
                     <!-- Timbres (Disponibles) -->
                     <Column header="Timbres">
                         <template #body="{ data }">
-                            <span
-                                v-if="data.stamps_available !== null && data.stamps_available !== undefined"
-                                class="font-mono font-light tracking-tight text-lg text-gray-900 dark:text-white"
-                            >
-                                {{ formatStamps(data.stamps_available) }}
-                            </span>
+                            <div v-if="data.stamps_available !== null && data.stamps_available !== undefined" class="flex items-center gap-2">
+                                <span
+                                    class="font-mono font-light tracking-tight text-lg"
+                                    :class="isLowStamps(data) ? 'text-amber-500 dark:text-amber-400' : 'text-gray-900 dark:text-white'"
+                                >
+                                    {{ formatStamps(data.stamps_available) }}
+                                </span>
+                                <i
+                                    v-if="isLowStamps(data)"
+                                    class="pi pi-exclamation-triangle !text-sm text-amber-500"
+                                    v-tooltip.top="'Saldo bajo de timbres'"
+                                ></i>
+                            </div>
                             <span v-else class="text-xs text-gray-400 dark:text-gray-600 italic">
                                 No disponible
                             </span>
@@ -417,6 +552,7 @@ const tagPt = {
                         </template>
                     </Column>
                 </DataTable>
+                </div>
             </div>
         </div>
 

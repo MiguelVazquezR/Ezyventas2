@@ -82,18 +82,38 @@ class Transaction extends Model
         );
     }
 
-    // NUEVO: Calcula cuánto falta por pagar
+    // NUEVO: Calcula cuánto falta por pagar. A voided sale (cancelled or
+    // refunded) owes nothing, so its pending balance is zero.
     protected function remainingDue(): Attribute
     {
         return Attribute::make(
-            get: fn() => max(0, $this->total - $this->total_paid),
+            get: fn() => $this->isVoided() ? 0.0 : max(0, $this->total - $this->total_paid),
         );
+    }
+
+    /**
+     * Voided sale: cancelled or refunded. Neither the pending balance nor the
+     * customer debt counts for it.
+     */
+    public function isVoided(): bool
+    {
+        return in_array($this->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED], true);
     }
 
     // NUEVO: Método helper de estado
     public function isFullyPaid(): bool
     {
         return $this->remaining_due <= 0.01;
+    }
+
+    /**
+     * Indica si la transacción es un PEDIDO (creado en el POS con entrega).
+     * Todo pedido exige delivery_date, por lo que es un discriminador confiable.
+     */
+    public function isOrder(): bool
+    {
+        return $this->delivery_date !== null
+            || in_array($this->status, [TransactionStatus::TO_DELIVER, TransactionStatus::IN_TRANSIT, TransactionStatus::DELIVERED_UNPAID], true);
     }
 
     /*

@@ -20,6 +20,8 @@ const props = defineProps({
     referrerActiveDiscountPct: Number,
     userBankAccounts: Array, // Cuentas del suscriptor
     expenseCategories: Array, // Categorías de gasto del suscriptor
+    pendingReferralCode: String,
+    pendingReferralDiscountPct: { type: Number, default: 0 },
 });
 
 // --- Estado Básico ---
@@ -309,6 +311,16 @@ const onFileRemove = () => {
 const validatingCode = ref(false);
 const codeValidation = ref(null); // { valid: bool, message: string, discount_pct: number }
 
+// Cupón guardado al registrarse: se aplica solo en el primer pago.
+const hasSavedReferral = computed(() => !!props.pendingReferralCode);
+if (props.pendingReferralCode && props.pendingReferralDiscountPct) {
+    codeValidation.value = {
+        valid: true,
+        discount_pct: props.pendingReferralDiscountPct,
+        message: 'Tu cupón guardado se aplicará automáticamente.',
+    };
+}
+
 let validateTimer = null;
 watch(() => form.referral_code, (newCode) => {
     clearTimeout(validateTimer);
@@ -541,7 +553,7 @@ const submit = () => {
                                 </div>
 
                                 <!-- --- CAMPO DE CÓDIGO DE REFERIDO --- -->
-                                <div v-if="isFirstPayment" class="mt-4 space-y-2">
+                                <div v-if="isFirstPayment && !hasSavedReferral" class="mt-4 space-y-2">
                                     <Divider />
                                     <div class="flex flex-col gap-1.5">
                                         <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">¿Tienes un código de referido?</label>
@@ -565,6 +577,21 @@ const submit = () => {
                                             <span>{{ codeValidation.message }}</span>
                                         </div>
                                         <InputError :message="form.errors.referral_code" />
+                                    </div>
+                                </div>
+
+                                <!-- Cupón guardado en el registro (se aplica solo) -->
+                                <div v-else-if="isFirstPayment && hasSavedReferral" class="mt-4">
+                                    <Divider />
+                                    <div class="flex items-start gap-3 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-4">
+                                        <i class="pi pi-gift !text-base text-green-600 dark:text-green-400 mt-0.5"></i>
+                                        <div>
+                                            <p class="text-sm font-medium text-green-800 dark:text-green-200 m-0">Cupón de referido {{ pendingReferralCode }}</p>
+                                            <p class="text-xs text-green-700 dark:text-green-300 m-0 mt-1">
+                                                Lo guardaste al crear tu cuenta y se aplicará automáticamente en este pago
+                                                ({{ pendingReferralDiscountPct }}% de descuento).
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
 

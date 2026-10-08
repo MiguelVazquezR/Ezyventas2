@@ -1,0 +1,182 @@
+<?php
+
+namespace App\Http\Controllers\Api\V1\Printing;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\Printing\BluetoothPayloadRequest;
+use App\Http\Requests\Api\V1\Printing\PrintPayloadRequest;
+use App\Http\Requests\Api\V1\Printing\PrintTemplatesRequest;
+use App\Http\Requests\Api\V1\Printing\TicketHtmlRequest;
+use App\Http\Requests\Api\V1\Printing\WhatsAppTicketRequest;
+use App\Models\PrintTemplate;
+use App\Models\ServiceOrder;
+use App\Models\Transaction;
+use App\Models\User;
+use App\Services\PrintEncoderService;
+use App\Services\Printing\PrintDataSourceResolver;
+use App\Services\WhatsAppTicketService;
+use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+
+/**
+ * Printing and WhatsApp tickets for the mobile app.
+ *
+ * The server owns the templates: the app only receives the documents already
+ * encoded (ESC/POS commands, TSPL operations or HTML) or the WhatsApp payload,
+ * so a ticket looks the same whichever client prints it.
+ */
+class PrintController extends Controller
+{
+    public function __construct(
+        private readonly PrintDataSourceResolver $dataSources,
+        private readonly WhatsAppTicketService $whatsAppTickets,
+    ) {}
+
+    public function templates(PrintTemplatesRequest $request): JsonResponse
+    {
+        $query = PrintTemplate::where('subscription_id', $request->user()->branch?->subscription_id);
+
+        // One or several contexts: the caller may ask for the whole set the web
+        // uses (the POS needs `pos` + `general`).
+        if ($contexts = $request->contexts()) {
+            $query->whereIn('context_type', $contexts);
+        }
+
+        if ($type = $request->validated('type')) {
+            $query->where('type', $type);
+        }
+
+        return response()->json(
+            $query->orderByDesc('is_default')->orderBy('name')->get()
+                ->map(fn (PrintTemplate $template) => [
+                    'id' => $template->id,
+                    'name' => $template->name,
+                    'type' => $template->type instanceof \BackedEnum ? $template->type->value : $template->type,
+                    'context_type' => $template->context_type,
+                    'paper_width' => $this->paperWidth($template),
+                    'is_default' => (bool) $template->is_default,
+                    'config' => $template->content['config'] ?? [],
+                ])
+                ->values()
+                ->all()
+        );
+    }
+
+    public function bluetoothPayload(BluetoothPayloadRequest $request): JsonResponse
+    {
+        $template = $this->findTemplateOrFail((int) $request->validated('template_id'), $request->user());
+
+        return response()->json([
+            'commands_base64' => PrintEncoderService::encodeEscPosToBase64(
+                $template,
+                $this->resolveSource($request),
+                $request->options()
+            ),
+            'paperWidth' => $this->paperWidth($template),
+        ]);
+    }
+
+    public function payload(PrintPayloadRequest $request): JsonResponse
+    {
+        $template = $this->findTemplateOrFail((int) $request->validated('template_id'), $request->user());
+
+        // The report tells the client what the server could not resolve (an
+        // image that could not be rasterized), so it can warn instead of
+        // printing an incomplete label.
+        $encoded = PrintEncoderService::encodeWithReport(
+            $template,
+            $this->resolveSource($request),
+            $request->options()
+        );
+
+        return response()->json([
+            'operations' => $encoded['operations'],
+            'unsupported_operations' => $encoded['unsupported_operations'],
+            'warnings' => $encoded['warnings'],
+            'paperWidth' => $this->paperWidth($template),
+            'feedLines' => $template->content['config']['feedLines'] ?? 0,
+        ]);
+    }
+
+    public function ticketHtml(TicketHtmlRequest $request): JsonResponse
+    {
+        $template = $this->findTemplateOrFail((int) $request->validated('template_id'), $request->user());
+
+        return response()->json([
+            'html' => PrintEncoderService::encodeTicketToHtml($template, $this->resolveSource($request)),
+            'paperWidth' => $this->paperWidth($template),
+            'template_name' => $template->name,
+        ]);
+    }
+
+    public function whatsappTicket(WhatsAppTicketRequest $request): JsonResponse
+    {
+        $dataSource = $this->resolveSource($request);
+
+        // A service order has its own ticket: equipment, status, parts and the
+        // pending balance (the customer phone comes from the order).
+        if ($dataSource instanceof ServiceOrder) {
+            return response()->json([
+                'ticket' => $this->whatsAppTickets->buildServiceOrderPayload($dataSource),
+                'customer_phone' => $dataSource->customer?->phone ?: ($dataSource->customer_phone ?: null),
+                'customer_id' => $dataSource->customer?->id,
+            ]);
+        }
+
+        // Anything that is not a sale nor an order has no WhatsApp ticket: say
+        // it, instead of answering 200 with `ticket: null` (the app then showed
+        // "sent" with nothing to send).
+        if (!$dataSource instanceof Transaction) {
+            return response()->json([
+                'code' => 'no_whatsapp_ticket',
+                'message' => 'Este documento no tiene ticket de WhatsApp.',
+            ], 422);
+        }
+
+        $customer = $dataSource->customer;
+        $dataSource->loadMissing(['branch.subscription']);
+
+        // Orders get their own ticket (with the delivery status).
+        if ($dataSource->isOrder()) {
+            $contactInfo = $dataSource->contact_info;
+            $contactPhone = is_array($contactInfo) ? ($contactInfo['phone'] ?? null) : null;
+
+            return response()->json([
+                'ticket' => $this->whatsAppTickets->buildOrderPayload($dataSource),
+                'customer_phone' => $contactPhone ?: ($customer?->phone ?: null),
+                'customer_id' => $customer?->id,
+            ]);
+        }
+
+        return response()->json([
+            'ticket' => $this->whatsAppTickets->buildSalePayload($dataSource),
+            'customer_phone' => $customer?->phone,
+            'customer_id' => $customer?->id,
+        ]);
+    }
+
+    private function resolveSource(BluetoothPayloadRequest|PrintPayloadRequest|TicketHtmlRequest|WhatsAppTicketRequest $request): mixed
+    {
+        return $this->dataSources->resolve(
+            $request->validated('data_source_type'),
+            (int) $request->validated('data_source_id'),
+            $request->user()
+        );
+    }
+
+    private function findTemplateOrFail(int $templateId, ?User $user): PrintTemplate
+    {
+        $template = PrintTemplate::find($templateId);
+
+        if (!$template || (int) $template->subscription_id !== (int) $user?->branch?->subscription_id) {
+            throw new NotFoundHttpException('Recurso no encontrado.');
+        }
+
+        return $template;
+    }
+
+    private function paperWidth(PrintTemplate $template): string
+    {
+        return $template->content['config']['paperWidth'] ?? '80mm';
+    }
+}

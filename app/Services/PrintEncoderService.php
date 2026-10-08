@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\PaymentMethod;
 use App\Enums\TemplateType;
 use App\Enums\TransactionStatus;
 use App\Models\Branch;
+use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Payment; // Importamos el modelo Payment
 use App\Models\PrintTemplate;
@@ -13,30 +15,58 @@ use App\Models\ServiceOrder;
 use App\Models\Subscription;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\Printing\EscPosImageRasterizer;
+use App\Services\Printing\TsplImageRasterizer;
+use App\Services\CashRegisters\CashRegisterSessionQueryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class PrintEncoderService
 {
     /**
-     * Actúa como un enrutador para llamar al codificador correcto según el tipo de plantilla y la fuente de datos.
+     * Codifica la plantilla con el codificador que le toca.
+     *
+     * @return array<int, array<string, mixed>>  operations ready to print
      */
     public static function encode(PrintTemplate $template, $dataSource, array $options = []): array
     {
-        // 1. Ticket de Venta / Orden de Servicio / CLIENTE
+        return self::encodeWithReport($template, $dataSource, $options)['operations'];
+    }
+
+    /**
+     * Operations of a template plus the ones a light client cannot resolve (an
+     * image the server could not rasterize, for example), so the client can warn
+     * instead of printing an incomplete document.
+     *
+     * @return array{operations: array<int, array<string, mixed>>, unsupported_operations: array<int, string>}
+     */
+    public static function encodeWithReport(PrintTemplate $template, $dataSource, array $options = []): array
+    {
+        $unsupported = [];
+        $warnings = [];
+
+        // 1. Ticket de Venta / Orden de Servicio / CLIENTE / CORTE DE CAJA
         if (
             $template->type === TemplateType::SALE_TICKET &&
-            ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder || $dataSource instanceof Customer)
+            ($dataSource instanceof Transaction
+                || $dataSource instanceof ServiceOrder
+                || $dataSource instanceof Customer
+                || $dataSource instanceof CashRegisterSession)
         ) {
-            return self::encodeEscPos($template, $dataSource, $options);
+            $operations = self::encodeEscPos($template, $dataSource, $options);
         }
-
         // 2. Etiqueta (Producto / OS)
-        if ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
-            return self::encodeTspl($template, $dataSource, $options);
+        elseif ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
+            $operations = self::encodeTspl($template, $dataSource, $options, $unsupported, $warnings);
+        } else {
+            $operations = [];
         }
 
-        return [];
+        return [
+            'operations' => $operations,
+            'unsupported_operations' => $unsupported,
+            'warnings' => $warnings,
+        ];
     }
 
     /**
@@ -55,7 +85,7 @@ class PrintEncoderService
             $rawBytes .= "\x1B" . "p" . "\x00" . "\x19" . "\xFA";
         }
 
-        $rawBytes .= self::buildEscPosRawText($elements, $config, $dataSource);
+        $rawBytes .= self::buildEscPosRawText($elements, $config, $dataSource, withImages: true);
 
         return base64_encode($rawBytes);
     }
@@ -143,7 +173,7 @@ class PrintEncoderService
     /**
      * Codifica una plantilla de Etiqueta (TSPL)
      */
-    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
+    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = [], array &$unsupported = [], array &$warnings = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
@@ -186,12 +216,50 @@ class PrintEncoderService
                     $barcodeType = $element['data']['type'];
                     $height = $element['data']['height'];
                     $value = self::replacePlaceholders($element['data']['value'], $dataSource);
+
+                    // A barcode with no value is printed empty: fall back to the
+                    // code of the document and tell the client about it.
+                    if (trim($value) === '') {
+                        $value = self::barcodeFallback($dataSource);
+
+                        if ($value === '') {
+                            break;
+                        }
+
+                        $warnings[] = "Barcode: la plantilla no resolvió un valor, se usó «{$value}».";
+                    }
+
                     $tspl .= "BARCODE {$x},{$y},\"{$barcodeType}\",{$height},1,{$rotation},2,2,\"{$value}\"\n";
                     break;
                 case 'qr':
                     $magnification = $element['data']['magnification'];
                     $value = self::replacePlaceholders($element['data']['value'], $dataSource);
                     $tspl .= "QRCODE {$x},{$y},L,{$magnification},A,{$rotation},M2,\"{$value}\"\n";
+                    break;
+                case 'image':
+                case 'local_image':
+                    // The label printer needs the image already rasterized: the
+                    // server downloads it and sends it as a TSPL BITMAP, so a
+                    // light client prints the whole label.
+                    $url = $element['data']['url'] ?? null;
+
+                    if (!$url) {
+                        break;
+                    }
+
+                    $bitmap = TsplImageRasterizer::command(
+                        (string) $url,
+                        (int) round(($config['width'] ?? 50) * $dotsPerMm),
+                        (int) $x,
+                        (int) $y,
+                    );
+
+                    if ($bitmap === null) {
+                        $unsupported[] = 'Image: ' . $url;
+                        break;
+                    }
+
+                    $tspl .= $bitmap . "\n";
                     break;
             }
         }
@@ -230,7 +298,16 @@ class PrintEncoderService
         return $operations;
     }
 
-    private static function buildEscPosRawText(array $elements, array $config, $dataSource): string
+    /**
+     * Raw ESC/POS bytes of the ticket.
+     *
+     * @param  bool  $withImages  true only for the Bluetooth payload: there the
+     *                            server rasterizes the images, because the phone
+     *                            cannot download them. The desktop plugin (which
+     *                            prints through `/print/payload`) keeps receiving
+     *                            the image as its own operation.
+     */
+    private static function buildEscPosRawText(array $elements, array $config, $dataSource, bool $withImages = false): string
     {
         $esc = "\x1B";
         $gs = "\x1D";
@@ -263,8 +340,33 @@ class PrintEncoderService
                 case 'line_break':
                     $fullText .= "\n";
                     break;
+                case 'image':
+                case 'local_image':
+                    if (!$withImages || empty($element['data']['url'])) {
+                        break;
+                    }
+
+                    $raster = EscPosImageRasterizer::command(
+                        (string) $element['data']['url'],
+                        EscPosImageRasterizer::dotsForPaperWidth($config['paperWidth'] ?? '80mm')
+                    );
+
+                    if ($raster !== null) {
+                        $fullText .= $raster . "\n";
+                    }
+                    break;
                 case 'barcode':
                     $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);
+
+                    // Never print an empty barcode (see barcodeFallback).
+                    if (trim($barcodeData) === '') {
+                        $barcodeData = self::barcodeFallback($dataSource);
+
+                        if ($barcodeData === '') {
+                            break;
+                        }
+                    }
+
                     $height = $element['data']['height'] ?? 80;
                     $height = max(1, min(255, (int)$height));
                     $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n";
@@ -360,6 +462,24 @@ class PrintEncoderService
             '{{cliente.rfc}}' => '',
             '{{cliente.direccion}}' => '',
         ];
+    }
+
+    /**
+     * Code to print when the template could not resolve the value of a barcode:
+     * an empty barcode is worse than a code the client can use to look the
+     * document up (hallazgo 19).
+     */
+    private static function barcodeFallback($dataSource): string
+    {
+        return match (true) {
+            // The products table has no barcode column: the SKU is the code of
+            // the product, and the id is the last resort.
+            $dataSource instanceof Product => (string) ($dataSource->sku ?: 'P-' . $dataSource->id),
+            $dataSource instanceof ServiceOrder => (string) $dataSource->folio,
+            $dataSource instanceof Transaction => (string) $dataSource->folio,
+            $dataSource instanceof Customer => 'C-' . $dataSource->id,
+            default => '',
+        };
     }
 
     private static function getVendedorReplacements(?User $user): array
@@ -626,6 +746,14 @@ class PrintEncoderService
             }
 
             $replacements += self::getVendedorReplacements(auth()->user());
+        } elseif ($dataSource instanceof CashRegisterSession) {
+            $dataSource->loadMissing(['cashRegister.branch.subscription', 'opener', 'payments', 'cashMovements']);
+
+            $replacements += self::getCashRegisterCutReplacements($dataSource);
+            $replacements += self::getNegocioReplacements($dataSource->cashRegister->branch->subscription);
+            $replacements += self::getSucursalReplacements($dataSource->cashRegister->branch);
+            $replacements += self::getVendedorReplacements($dataSource->opener);
+
         }
 
         $text = str_replace(array_keys($replacements), array_values($replacements), $text);
@@ -633,7 +761,44 @@ class PrintEncoderService
         $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{v\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{c\.(.*?)}}/', '', $text);
+        $text = preg_replace('/{{corte\.(.*?)}}/', '', $text);
 
         return $text;
+    }
+
+    /**
+     * Values a cut ticket prints: the same figures the cut screen shows, with
+     * the frozen totals of a closed shift.
+     *
+     * @return array<string, string>
+     */
+    private static function getCashRegisterCutReplacements(CashRegisterSession $session): array
+    {
+        $summary = app(CashRegisterSessionQueryService::class)->summaryPayload($session, $session->opener);
+        $cash = $summary['cash'];
+        $methods = $summary['payments_by_method'];
+        $money = fn (?float $value): string => number_format((float) $value, 2);
+
+        return [
+            '{{corte.folio}}' => '#' . $session->id,
+            '{{corte.caja}}' => $session->cashRegister->name ?? '',
+            '{{corte.cajero}}' => $session->opener->name ?? '',
+            '{{corte.fecha_apertura}}' => $session->opened_at?->format('d/m/Y H:i A') ?? '',
+            '{{corte.fecha_cierre}}' => $session->closed_at?->format('d/m/Y H:i A') ?? 'En curso',
+            '{{corte.fondo_inicial}}' => $money($cash['opening']),
+            '{{corte.ventas_efectivo}}' => $money($methods[PaymentMethod::CASH->value] ?? 0),
+            '{{corte.ingresos}}' => $money($cash['inflows']),
+            '{{corte.retiros}}' => $money($cash['outflows']),
+            '{{corte.esperado}}' => $money($cash['expected_total']),
+            '{{corte.contado}}' => $money($cash['counted_total'] ?? 0),
+            '{{corte.diferencia}}' => $money($cash['difference'] ?? 0),
+            '{{corte.tarjeta}}' => $money($methods[PaymentMethod::CARD->value] ?? 0),
+            '{{corte.transferencia}}' => $money($methods[PaymentMethod::TRANSFER->value] ?? 0),
+            '{{corte.saldo}}' => $money($methods[PaymentMethod::BALANCE->value] ?? 0),
+            '{{corte.total_ventas}}' => $money(array_sum($methods)),
+            '{{corte.ventas}}' => (string) $summary['counts']['transactions'],
+            '{{corte.pagos}}' => (string) $summary['counts']['payments'],
+            '{{corte.notas}}' => $session->notes ?? '',
+        ];
     }
 }

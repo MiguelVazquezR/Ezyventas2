@@ -78,6 +78,45 @@ class ProductController extends Controller implements HasMiddleware
             });
         }
 
+        // Filtro por apartados (reserved_stock > 0) en la sucursal del usuario
+        $reservedFilter = $request->input('reserved');
+
+        if ($reservedFilter === 'with_reserved') {
+            $query->where(function ($q) use ($branchId) {
+                $q->whereExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')
+                        ->from('branch_product')
+                        ->whereColumn('branch_product.product_id', 'products.id')
+                        ->where('branch_product.branch_id', $branchId)
+                        ->where('branch_product.reserved_stock', '>', 0);
+                })->orWhereExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')
+                        ->from('product_attributes')
+                        ->join('branch_product_attribute', 'branch_product_attribute.product_attribute_id', '=', 'product_attributes.id')
+                        ->whereColumn('product_attributes.product_id', 'products.id')
+                        ->where('branch_product_attribute.branch_id', $branchId)
+                        ->where('branch_product_attribute.reserved_stock', '>', 0);
+                });
+            });
+        } elseif ($reservedFilter === 'without_reserved') {
+            $query->where(function ($q) use ($branchId) {
+                $q->whereNotExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')
+                        ->from('branch_product')
+                        ->whereColumn('branch_product.product_id', 'products.id')
+                        ->where('branch_product.branch_id', $branchId)
+                        ->where('branch_product.reserved_stock', '>', 0);
+                })->whereNotExists(function ($sub) use ($branchId) {
+                    $sub->selectRaw('1')
+                        ->from('product_attributes')
+                        ->join('branch_product_attribute', 'branch_product_attribute.product_attribute_id', '=', 'product_attributes.id')
+                        ->whereColumn('product_attributes.product_id', 'products.id')
+                        ->where('branch_product_attribute.branch_id', $branchId)
+                        ->where('branch_product_attribute.reserved_stock', '>', 0);
+                });
+            });
+        }
+
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
 
@@ -85,7 +124,34 @@ class ProductController extends Controller implements HasMiddleware
             $query->join('categories', 'products.category_id', '=', 'categories.id')
                 ->orderBy('categories.name', $sortOrder)
                 ->select('products.*');
-        } elseif (in_array($sortField, ['current_stock', 'min_stock', 'max_stock', 'location'])) {
+        } elseif ($sortField === 'current_stock') {
+            // Orden por existencias tal y como se muestran en la tabla (stock disponible):
+            // - Productos con variantes: suma del stock disponible (actual - apartado) de sus variantes en la sucursal
+            // - Productos sin variantes: stock disponible del pivote branch_product
+            $direction = strtolower($sortOrder) === 'asc' ? 'asc' : 'desc';
+
+            $query->orderByRaw(
+                "CASE WHEN EXISTS (
+                    SELECT 1 FROM product_attributes pa2 WHERE pa2.product_id = products.id
+                )
+                THEN COALESCE((
+                    SELECT SUM(bpa.current_stock - bpa.reserved_stock)
+                    FROM product_attributes pa
+                    JOIN branch_product_attribute bpa
+                        ON bpa.product_attribute_id = pa.id AND bpa.branch_id = ?
+                    WHERE pa.product_id = products.id
+                ), 0)
+                ELSE COALESCE((
+                    SELECT bp.current_stock - bp.reserved_stock
+                    FROM branch_product bp
+                    WHERE bp.product_id = products.id AND bp.branch_id = ?
+                ), 0)
+                END {$direction}",
+                [$branchId, $branchId]
+            );
+
+            $query->select('products.*');
+        } elseif (in_array($sortField, ['min_stock', 'max_stock', 'location'])) {
             $query->join('branch_product', function ($join) use ($branchId) {
                 $join->on('products.id', '=', 'branch_product.product_id')
                     ->where('branch_product.branch_id', '=', $branchId);
@@ -146,7 +212,7 @@ class ProductController extends Controller implements HasMiddleware
 
         return Inertia::render('Product/Index', [
             'products' => $products,
-            'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'filters' => $request->only(['search', 'sortField', 'sortOrder', 'reserved']),
             'productLimit' => (int) $limitProducts,
             'productUsage' => (int) $productsCount,
             'productLimitReached' => $productLimitReached,

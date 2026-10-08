@@ -55,6 +55,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
                 TemplateContextType::SERVICE_ORDER => 'Orden de Servicio',
                 TemplateContextType::QUOTE => 'Cotización',
                 TemplateContextType::CUSTOMER => 'Cliente / Estado de Cuenta',
+                TemplateContextType::CASH_REGISTER => 'Corte de caja',
+
                 TemplateContextType::GENERAL => 'General',
             }
         ])->values()->toArray();

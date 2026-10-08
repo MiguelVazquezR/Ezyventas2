@@ -1,10 +1,15 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 
 const emit = defineEmits(['success']);
 
 const visible = ref(false);
+// Perfil en edición: null = crear, objeto = editar los datos del emisor.
+const profile = ref(null);
+const isEdit = computed(() => !!profile.value);
+// El RFC solo se puede modificar cuando el perfil aún no tiene certificados CSD.
+const rfcLocked = computed(() => isEdit.value && !!profile.value?.certificate_number);
 
 const form = useForm({
     rfc: '',
@@ -29,20 +34,38 @@ const taxRegimeOptions = [
     { label: '626 - Régimen Simplificado de Confianza', value: '626' },
 ];
 
-function open() {
-    form.reset();
+function open(profileData = null) {
+    profile.value = profileData || null;
     form.clearErrors();
+
+    if (profileData) {
+        form.rfc = profileData.rfc || '';
+        form.razon_social = profileData.razon_social || '';
+        form.regimen_fiscal = profileData.regimen_fiscal || '';
+        form.postal_code = profileData.postal_code || '';
+        form.email = profileData.email || '';
+    } else {
+        form.reset();
+    }
+
     visible.value = true;
 }
 
 function submit() {
-    form.post(route('billing.settings.storeFiscalProfile'), {
+    const options = {
         onSuccess: () => {
             visible.value = false;
             form.reset();
+            profile.value = null;
             emit('success');
         },
-    });
+    };
+
+    if (isEdit.value) {
+        form.put(route('billing.settings.updateFiscalProfile', profile.value.id), options);
+    } else {
+        form.post(route('billing.settings.storeFiscalProfile'), options);
+    }
 }
 
 defineExpose({ open });
@@ -76,18 +99,18 @@ const selectPt = {
                 </div>
                 <div>
                     <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">
-                        Agregar emisor fiscal
+                        {{ isEdit ? 'Editar emisor fiscal' : 'Agregar emisor fiscal' }}
                     </h2>
                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
-                        Nueva razón social para facturación
+                        {{ isEdit ? 'Actualiza los datos del RFC para facturación' : 'Nueva razón social para facturación' }}
                     </p>
                 </div>
             </div>
         </template>
 
         <form @submit.prevent="submit" class="flex flex-col gap-5 pt-2">
-            <!-- ═══════════════ PASO 1: Info banner (style like CsdUploadModal) ═══════════════ -->
-            <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+            <!-- ═══════════════ PASO 1: Info banner (solo al crear) ═══════════════ -->
+            <div v-if="!isEdit" class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30">
                 <div class="flex items-start gap-3">
                     <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5"></i>
                     <div>
@@ -113,11 +136,15 @@ const selectPt = {
                             class="w-full"
                             :class="{ '!border-red-500': form.errors.rfc }"
                             maxlength="13"
-                            :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !pl-9 !text-sm !placeholder:text-gray-400 dark:!placeholder:text-gray-500' } }"
+                            :disabled="rfcLocked"
+                            :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !pl-9 !text-sm !placeholder:text-gray-400 dark:!placeholder:text-gray-500 disabled:!opacity-60 disabled:!cursor-not-allowed' } }"
                         />
                     </div>
                     <Message v-if="form.errors.rfc" severity="error" variant="simple" size="small">
                         {{ form.errors.rfc }}
+                    </Message>
+                    <Message v-if="rfcLocked" severity="info" variant="simple" size="small">
+                        No se puede modificar el RFC porque tiene CSD cargados.
                     </Message>
                 </div>
 
@@ -212,7 +239,7 @@ const selectPt = {
                     class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold !text-gray-500 hover:!text-gray-700 dark:!text-gray-400 dark:hover:!text-gray-200 !transition-colors"
                 />
                 <Button
-                    label="Guardar emisor"
+                    :label="isEdit ? 'Actualizar datos' : 'Guardar emisor'"
                     icon="pi pi-save"
                     @click="submit"
                     :loading="form.processing"

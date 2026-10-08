@@ -24,6 +24,31 @@ const getVariants = (prod) => {
     return prod.product_attributes || prod.productAttributes || [];
 };
 
+// Calcula el stock disponible de una variante (físico - apartado). Puede ser
+// negativo cuando hay apartados que superan el stock físico de la variante.
+// También genera los porcentajes de la barra visual (disponible + apartado
+// sobre el físico total), para dejar claro que el apartado forma parte del físico.
+const getVariantStockInfo = (v) => {
+    const currentStock = Number(v.current_stock) || 0;
+    const reservedStock = Number(v.reserved_stock) || 0;
+    const availableStock = currentStock - reservedStock;
+
+    let bar = null;
+    if (currentStock > 0) {
+        bar = {
+            available: Math.max(0, Math.min(100, (availableStock / currentStock) * 100)),
+            reserved: Math.max(0, Math.min(100, (reservedStock / currentStock) * 100)),
+        };
+    }
+
+    return {
+        current_stock: currentStock,
+        reserved_stock: reservedStock,
+        available_stock: availableStock,
+        bar,
+    };
+};
+
 // Detectar si es edición de un solo producto o masiva
 const isSingleMode = computed(() => props.products.length === 1);
 const singleProduct = computed(() => isSingleMode.value ? props.products[0] : null);
@@ -131,23 +156,41 @@ watch(() => form.reason, (newReason) => {
     }
 });
 
+// NOTA: Inertia actualiza automáticamente los "defaults" del formulario tras
+// cada submit exitoso (defaults = data enviado). Por eso form.reset() NO limpia
+// los campos a sus valores iniciales reales al reabrir el modal. Por lo tanto
+// reseteamos explícitamente cada campo editable.
+const resetForm = () => {
+    form.type = 'simple';
+    form.operation = 'entry';
+    form.reason = entryReasons[0];
+    form.quantity = null;
+    form.variants = [];
+    form.products = [];
+    form.register_expense = false;
+    form.expense_amount_type = 'calculated';
+    form.expense_amount = null;
+    form.expense_date = new Date();
+    form.payment_method = 'efectivo';
+    form.take_from_cash_register = false;
+    form.bank_account_id = null;
+    form.cash_register_session_id = null;
+    form.clearErrors();
+};
+
 watch(() => props.visible, (newVal) => {
     if (newVal) {
-        form.reset();
+        resetForm();
         operation.value = 'entry';
-        form.operation = 'entry';
-        form.reason = entryReasons[0];
-        form.expense_date = new Date();
 
         if (isSingleMode.value) {
-            form.products = [];
             if (isVariantProduct.value) {
                 form.type = 'variant';
                 form.variants = getVariants(singleProduct.value).map(v => ({
                     id: v.id,
                     attributes: v.attributes,
                     quantity: 0,
-                    current_stock: v.current_stock
+                    ...getVariantStockInfo(v),
                 }));
             } else {
                 form.type = 'simple';
@@ -167,7 +210,7 @@ watch(() => props.visible, (newVal) => {
                         id: v.id,
                         attributes: v.attributes,
                         quantity: 0,
-                        current_stock: v.current_stock || 0
+                        ...getVariantStockInfo(v),
                     })) : []
                 };
             });
@@ -240,7 +283,8 @@ const submit = () => {
                     </div>
                     <div class="p-2 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                         <div v-for="(variant, index) in form.variants" :key="variant.id"
-                            class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg hover:shadow-sm transition-shadow">
+                            class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border rounded-lg hover:shadow-sm transition-shadow"
+                            :class="variant.available_stock < 0 ? 'border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/20' : 'dark:border-gray-700'">
                             <div class="flex items-center gap-3 w-full">
                                 <div class="flex-grow text-sm md:text-xs">
                                     <div class="font-semibold text-gray-700 dark:text-gray-300">
@@ -248,7 +292,26 @@ const submit = () => {
                                             {{ value }}
                                         </span>
                                     </div>
-                                    <span class="text-gray-500">Stock actual: {{ variant.current_stock }}</span>
+                                    <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1">
+                                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400"
+                                            v-tooltip.top="'Disponible = Físico total − Apartados'">Disponible</span>
+                                        <span :class="variant.available_stock < 0 ? 'text-lg font-bold leading-none text-red-600 dark:text-red-400' : 'text-lg font-semibold leading-none text-gray-900 dark:text-white'">
+                                            {{ variant.available_stock }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 text-xs text-gray-400">
+                                            <i class="pi pi-box !text-[10px]"></i> Físico total: {{ variant.current_stock }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 text-xs"
+                                            :class="variant.reserved_stock > 0 ? 'text-amber-500 font-medium' : 'text-gray-400'">
+                                            <i class="pi pi-lock !text-[10px]"></i> Apartado: {{ variant.reserved_stock }}
+                                        </span>
+                                    </div>
+                                    <div v-if="variant.bar"
+                                        class="flex h-1.5 w-32 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 mt-1.5"
+                                        v-tooltip.top="'Verde = disponible · Ámbar = apartado (parte del físico total)'">
+                                        <div class="bg-emerald-500" :style="{ width: variant.bar.available + '%' }"></div>
+                                        <div class="bg-amber-400" :style="{ width: variant.bar.reserved + '%' }"></div>
+                                    </div>
                                 </div>
                                 <InputNumber fluid v-model="variant.quantity" :min="0" placeholder="0" class="!w-24"
                                     showButtons inputClass="text-center text-sm" />
@@ -286,11 +349,31 @@ const submit = () => {
                         <!-- Producto con Variantes en Masa -->
                         <div v-else class="space-y-2">
                             <div v-for="v in prod.variants" :key="v.id"
-                                class="flex items-center justify-between bg-white dark:bg-gray-900 p-2 rounded border dark:border-gray-700">
+                                class="flex items-center justify-between bg-white dark:bg-gray-900 p-2 rounded border"
+                                :class="v.available_stock < 0 ? 'border-red-300 dark:border-red-900/60 bg-red-50 dark:bg-red-950/20' : 'dark:border-gray-700'">
                                 <div class="text-sm">
                                     <span v-for="(val, key) in v.attributes" :key="key"
                                         class="mr-1 font-semibold text-gray-700 dark:text-gray-300">{{ val }}</span>
-                                    <div class="text-xs text-gray-500 mt-0.5">Stock: {{ v.current_stock }}</div>
+                                    <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 mt-1 text-xs">
+                                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400"
+                                            v-tooltip.top="'Disponible = Físico total − Apartados'">Disponible</span>
+                                        <span :class="v.available_stock < 0 ? 'text-base font-bold leading-none text-red-600 dark:text-red-400' : 'text-base font-semibold leading-none text-gray-900 dark:text-white'">
+                                            {{ v.available_stock }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 text-gray-400">
+                                            <i class="pi pi-box !text-[10px]"></i> Físico total: {{ v.current_stock }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1"
+                                            :class="v.reserved_stock > 0 ? 'text-amber-500 font-medium' : 'text-gray-400'">
+                                            <i class="pi pi-lock !text-[10px]"></i> Apartado: {{ v.reserved_stock }}
+                                        </span>
+                                    </div>
+                                    <div v-if="v.bar"
+                                        class="flex h-1.5 w-28 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 mt-1.5"
+                                        v-tooltip.top="'Verde = disponible · Ámbar = apartado (parte del físico total)'">
+                                        <div class="bg-emerald-500" :style="{ width: v.bar.available + '%' }"></div>
+                                        <div class="bg-amber-400" :style="{ width: v.bar.reserved + '%' }"></div>
+                                    </div>
                                 </div>
                                 <InputNumber fluid v-model="v.quantity" :min="0" class="!w-28" showButtons
                                     inputClass="text-center text-sm" />

@@ -165,13 +165,13 @@ const inputPt = {
         </div>
 
         <template #footer>
-            <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+            <div class="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
                 <Button
                     label="Cancelar"
                     text
                     @click="visible = false"
                     :disabled="cancelForm.processing"
-                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
+                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold !justify-center w-full sm:w-auto"
                 />
                 <Button
                     label="Confirmar cancelación"
@@ -179,7 +179,7 @@ const inputPt = {
                     severity="danger"
                     :loading="cancelForm.processing"
                     @click="submitCancel"
-                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm"
+                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm !justify-center w-full sm:w-auto"
                 />
             </div>
         </template>

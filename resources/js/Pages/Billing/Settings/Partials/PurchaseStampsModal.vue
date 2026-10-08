@@ -240,7 +240,7 @@ const isButtonDisabled = computed(() => {
             </p>
 
             <!-- ── Sección 1: Cantidad + Montos por volumen (grid 2 cols) ── -->
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <!-- Columna izquierda: Ingreso de cantidad -->
                 <div>
                     <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2.5 block">

@@ -56,6 +56,7 @@ class UpdateInvoiceAction
                 'cfdi_use'             => $data['cfdi_use'],
                 'exportacion'          => $data['exportacion'] ?? '01',
                 'tipo_comprobante'     => $data['tipo_comprobante'] ?? 'I',
+                'issued_at'            => $data['issued_at'] ?? $invoice->issued_at,
                 'payment_form'         => $data['payment_form'] ?? $invoice->payment_form,
                 'payment_method'       => $data['payment_method'] ?? $invoice->payment_method,
                 'pago_fecha'           => $data['pago_fecha'] ?? $invoice->pago_fecha,

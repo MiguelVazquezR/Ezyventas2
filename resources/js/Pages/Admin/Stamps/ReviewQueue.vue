@@ -141,7 +141,7 @@ function confirmReject() {
 </script>
 
 <template>
-    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems">
+    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems" title="Bandeja de revisión">
         <div class="max-w-6xl mx-auto space-y-6">
 
             <!-- ── Header ──────────────────────────────── -->

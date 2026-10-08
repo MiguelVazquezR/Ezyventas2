@@ -57,6 +57,14 @@ const showBulkEditModal = ref(false);
 const showReportsModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
+// --- FILTRO POR APARTADOS (stock reservado) ---
+const reservedOptions = [
+    { label: 'Todos los productos', value: 'all' },
+    { label: 'Con apartados', value: 'with_reserved' },
+    { label: 'Sin apartados', value: 'without_reserved' },
+];
+const reservedFilter = ref(props.filters.reserved || 'all');
+
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
@@ -101,6 +109,38 @@ const getCalculatedReserved = (product) => {
 
 const getAvailableStock = (product) => {
     return getCalculatedStock(product) - getCalculatedReserved(product);
+};
+
+// --- VARIANTES EN DÉFICIT (existencias negativas) ---
+// Una variante está en déficit cuando su stock disponible neto es negativo:
+// vendieron (o apartaron) sin haber hecho la entrada de stock correspondiente.
+const getNegativeVariants = (product) => {
+    if (!product) return [];
+    return getVariants(product).filter((v) => {
+        const current = Number(v.current_stock) || 0;
+        const reserved = Number(v.reserved_stock) || 0;
+        return current - reserved < 0;
+    });
+};
+
+const hasNegativeVariants = (product) => {
+    return getNegativeVariants(product).length > 0;
+};
+
+// Contenido del tooltip del icono de variantes (soporta HTML con escape: false)
+const getVariantsTooltip = (product) => {
+    const totalVariants = getVariants(product).length;
+    const negativeCount = getNegativeVariants(product).length;
+
+    if (negativeCount === 0) {
+        return `Se suman existencias de ${totalVariants} variantes`;
+    }
+
+    const warning = negativeCount === 1
+        ? 'Tienes 1 variante con existencias negativas, revísala'
+        : `Tienes ${negativeCount} variantes con existencias negativas, revísalas`;
+
+    return `Se suman existencias de ${totalVariants} variantes<br><span class="text-red-500 font-bold">⚠️ ${warning}</span>`;
 };
 
 const getStockSeverity = (product) => {
@@ -229,15 +269,21 @@ const fetchData = (options = {}) => {
     const queryParams = {
         page: options.page || 1,
         rows: options.rows || props.products.per_page,
-        sortField: options.sortField || props.filters.sortField,
-        sortOrder: options.sortOrder === 1 ? 'asc' : 'desc',
+        sortField: options.sortField ?? props.filters.sortField,
+        // Preserva la dirección actual cuando solo cambian página/filas/búsqueda
+        // (sin sortOrder explícito). Solo se aplica la nueva dirección al ordenar.
+        sortOrder: options.sortOrder !== undefined && options.sortOrder !== 0
+            ? (options.sortOrder === 1 ? 'asc' : 'desc')
+            : (props.filters.sortOrder || 'desc'),
         search: searchTerm.value,
+        reserved: reservedFilter.value,
     };
     router.get(route('products.index'), queryParams, { preserveState: true, replace: true, });
 };
 const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
 const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
 watch(searchTerm, () => fetchData());
+watch(reservedFilter, () => fetchData());
 
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
@@ -282,6 +328,14 @@ const inputPt = {
     root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
 };
 
+const selectPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !text-sm' },
+    label: { class: '!text-sm !text-gray-700 dark:!text-gray-300' },
+    dropdown: { class: '!w-8 !text-gray-400' },
+    panel: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-xl !shadow-2xl' },
+    item: { class: '!text-sm !text-gray-700 dark:!text-gray-200' }
+};
+
 const tagPt = {
     root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
     icon: { class: '!text-[10px] !mr-1.5' }
@@ -318,10 +372,15 @@ const drawerPt = {
 
                 <!-- Barra de Herramientas de Filtros (Estilo Panel de Control) -->
                 <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
-                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
-                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
-                        <InputText v-model="searchTerm" placeholder="Buscar por código o nombre..." :pt="inputPt" class="!pl-10" />
-                    </IconField>
+                    <div class="flex flex-col sm:flex-row gap-3 w-full md:w-1/2 lg:w-1/2">
+                        <IconField iconPosition="left" class="w-full">
+                            <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                            <InputText v-model="searchTerm" placeholder="Buscar por código o nombre..." :pt="inputPt" class="!pl-10" />
+                        </IconField>
+                        <Select v-model="reservedFilter" :options="reservedOptions" optionLabel="label"
+                            optionValue="value" class="w-full sm:w-56" :pt="selectPt"
+                            v-tooltip.top="'Filtrar productos con apartados (stock reservado)'" />
+                    </div>
                     
                     <div class="flex items-center gap-2 w-full md:w-auto">
                         <Button v-if="hasPermission('products.create')" label="Nuevo producto"
@@ -477,8 +536,9 @@ const drawerPt = {
                                     severity="secondary" :pt="tagPt" />
 
                                 <!-- Tooltip visual de Variantes -->
-                                <i v-if="hasVariants(data)" class="pi pi-sitemap text-gray-400 !text-xs cursor-help"
-                                    v-tooltip.top="`Se suman existencias de ${getVariants(data).length} variantes`">
+                                <i v-if="hasVariants(data)" class="pi pi-sitemap !text-xs cursor-help"
+                                    :class="hasNegativeVariants(data) ? 'text-red-500' : 'text-gray-400'"
+                                    v-tooltip.top="{ value: getVariantsTooltip(data), escape: false }">
                                 </i>
                             </div>
                         </template>

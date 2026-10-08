@@ -3,8 +3,8 @@ import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
-import { useConfirm } from 'primevue/useconfirm';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
+import StampOldDateDialog from './Partials/StampOldDateDialog.vue';
 
 const props = defineProps({
     invoice: Object,
@@ -15,8 +15,15 @@ const props = defineProps({
     relatedPpdInvoices: { type: Array, default: () => [] },
 });
 
+// Tab title (uses the same wording as the status tag).
+const pageTitle = computed(() => {
+    const folio = [props.invoice.series, props.invoice.folio].filter(Boolean).join(' ');
+    const documentName = props.invoice.uuid ? 'Factura' : 'Pre-factura';
+
+    return folio ? `${documentName} ${folio}` : documentName;
+});
+
 const { hasPermission } = usePermissions();
-const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Helpers
@@ -47,6 +54,42 @@ const formatDate = (dateString) => {
         year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
 };
+
+// ──────────────────────────────────────
+// Cancelation acceptance deadline (Fase 3, T303)
+// The receiver has 72 hours from the cancelation request to answer at the SAT.
+// ──────────────────────────────────────
+const CANCELATION_WINDOW_HOURS = 72;
+
+const formatRemainingTime = (msLeft) => {
+    if (msLeft <= 0) return 'plazo vencido';
+    const totalHours = Math.floor(msLeft / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days > 0) return `${days} día${days === 1 ? '' : 's'} y ${hours} h`;
+    const minutes = Math.max(1, Math.floor(msLeft / (1000 * 60)));
+    return hours > 0 ? `${hours} h` : `${minutes} min`;
+};
+
+const cancelationDeadline = computed(() => {
+    if (props.invoice.status !== 'cancelacion_pendiente' || !props.invoice.cancelation_requested_at) {
+        return null;
+    }
+
+    const requestedAt = new Date(props.invoice.cancelation_requested_at);
+    if (Number.isNaN(requestedAt.getTime())) return null;
+
+    const deadline = new Date(requestedAt.getTime() + CANCELATION_WINDOW_HOURS * 60 * 60 * 1000);
+    const msLeft = deadline.getTime() - Date.now();
+
+    return {
+        dateLabel: deadline.toLocaleDateString('es-MX', {
+            day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+        }),
+        expired: msLeft <= 0,
+        remainingLabel: formatRemainingTime(msLeft),
+    };
+});
 
 const statusLabel = computed(() => {
     const map = {
@@ -217,36 +260,22 @@ const cancelModalRef = ref(null);
 // Stamp a draft invoice directly from the detail page
 // ──────────────────────────────────────
 const stamping = ref(false);
+const showOldStampDialog = ref(false);
 
 // A draft older than 72h can no longer be stamped with its original issue
-// date (SAT rule). If confirmed, the CFDI is re-issued with today's date.
+// date (SAT rule). Uses the effective issue date (issued_at ?? created_at).
 const isOldDraft = computed(() => {
     if (props.invoice.status !== 'borrador') return false;
-    const createdAt = new Date(props.invoice.created_at);
-    if (Number.isNaN(createdAt.getTime())) return false;
-    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+    const d = new Date(props.invoice.issued_at || props.invoice.created_at);
+    if (Number.isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60) > 72;
 });
 
 function stampInvoice() {
     if (stamping.value) return;
 
     if (isOldDraft.value) {
-        confirm.require({
-            message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, el CFDI se emitirá con la fecha y hora de hoy.',
-            header: 'Fecha de emisión vencida',
-            icon: 'pi pi-exclamation-triangle',
-            acceptLabel: 'Timbrar con fecha de hoy',
-            rejectLabel: 'Cancelar',
-            rejectClass: 'p-button-outlined',
-            acceptClass: 'p-button-warning',
-            accept: () => {
-                stamping.value = true;
-                router.post(route('billing.invoices.stamp', props.invoice.id), { change_date: true }, {
-                    preserveScroll: true,
-                    onFinish: () => { stamping.value = false; },
-                });
-            },
-        });
+        showOldStampDialog.value = true;
         return;
     }
 
@@ -255,6 +284,23 @@ function stampInvoice() {
         preserveScroll: true,
         onFinish: () => { stamping.value = false; },
     });
+}
+
+// "Timbrar con fecha de hoy" desde el modal de fecha vencida.
+function stampWithToday() {
+    if (stamping.value) return;
+    showOldStampDialog.value = false;
+    stamping.value = true;
+    router.post(route('billing.invoices.stamp', props.invoice.id), { change_date: true }, {
+        preserveScroll: true,
+        onFinish: () => { stamping.value = false; },
+    });
+}
+
+// "Editar fecha" desde el modal → manda a la edición de la prefactura.
+function goToEditDraft() {
+    showOldStampDialog.value = false;
+    router.get(route('billing.invoices.edit', props.invoice.id));
 }
 
 // ──────────────────────────────────────
@@ -295,7 +341,9 @@ const actionMenuItems = computed(() => {
         });
     }
 
-    if (isPpd.value && props.invoice.uuid) {
+    // A canceled PPD invoice can no longer receive payment CFDIs: the SAT
+    // rejects related documents that reference a canceled CFDI.
+    if (isPpd.value && props.invoice.uuid && props.invoice.status !== 'cancelada') {
         items.push({ label: 'Facturar pago', icon: 'pi pi-wallet', command: goToCreatePago });
     }
 
@@ -314,7 +362,7 @@ const actionMenuItems = computed(() => {
             label: 'Solicitar cancelación',
             icon: 'pi pi-times-circle',
             class: 'text-red-500',
-            command: () => cancelModalRef?.open(),
+            command: () => cancelModalRef.value?.open(),
         });
     }
 
@@ -354,20 +402,20 @@ const tagPt = {
 </script>
 
 <template>
-    <Head :title="`Factura ${invoice.series ? invoice.series + ' ' : ''}${invoice.folio}`" />
+    <Head :title="pageTitle" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
             <!-- Breadcrumb / Back link -->
             <div class="flex items-center">
                 <Link :href="route('billing.invoices.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
-                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver a facturación
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver a lista de facturas
                 </Link>
             </div>
 
             <!-- Header Principal -->
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div>
-                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-4">
+                    <h1 class="text-2xl sm:text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex flex-wrap items-center gap-3">
                         Factura {{ invoice.series ? invoice.series + ' ' : '' }}{{ invoice.folio }}
                         <span v-if="invoice.series && !invoice.uuid" class="text-[10px] uppercase tracking-widest font-bold text-gray-400 bg-gray-100 dark:bg-[#1a1a1a] px-3 py-1 rounded-full">Serie {{ invoice.series }}</span>
                     </h1>
@@ -405,14 +453,14 @@ const tagPt = {
                 </div>
 
                 <!-- Action menu -->
-                <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                <div class="w-full sm:w-auto shrink-0 grid grid-cols-2 sm:flex sm:items-center gap-2">
                     <Button
                         v-if="invoice.xml_url"
                         icon="pi pi-file-excel !text-sm"
                         label="XML"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors !justify-center w-full sm:w-auto"
                         @click="downloadFile(route('billing.invoices.xml', invoice.id))"
                     />
                     <Button
@@ -420,18 +468,19 @@ const tagPt = {
                         label="PDF"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors !justify-center w-full sm:w-auto"
                         @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
                     
                     <Button
+                        v-if="actionMenuItems.length > 0"
                         type="button"
                         label="Opciones"
                         icon="pi pi-chevron-down"
                         iconPos="right"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto !justify-center"
                         @click="toggleActionsMenu"
                     />
                     <Button
@@ -440,7 +489,7 @@ const tagPt = {
                         icon="pi pi-check-circle"
                         :loading="stamping"
                         @click="stampInvoice"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-5 shadow-sm"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-5 shadow-sm !justify-center w-full sm:w-auto col-span-2 sm:col-span-1"
                     />
                     <Menu ref="actionsMenu" :model="actionMenuItems" :popup="true" :pt="menuPt" />
                 </div>
@@ -448,7 +497,17 @@ const tagPt = {
             <!-- Cancelation pending info -->
             <div v-if="invoice.status === 'cancelacion_pendiente'" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
                 <i class="pi pi-clock !text-xs mt-0.5" />
-                <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. Usa "Verificar estatus" para consultar si ya se resolvió. Mientras tanto, esta factura sigue vigente.</span>
+                <div class="flex flex-col gap-1">
+                    <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. El estatus se verifica automáticamente al abrir esta página o con el botón "Verificar estatus". Mientras tanto, esta factura sigue vigente.</span>
+                    <span v-if="cancelationDeadline" class="m-0 font-bold">
+                        <template v-if="cancelationDeadline.expired">
+                            El plazo de aceptación ya venció — puedes reintentar la cancelación.
+                        </template>
+                        <template v-else>
+                            Plazo de aceptación: queda {{ cancelationDeadline.remainingLabel }} (vence el {{ cancelationDeadline.dateLabel }}).
+                        </template>
+                    </span>
+                </div>
             </div>
 
             <!-- Two-panel layout -->
@@ -561,7 +620,7 @@ const tagPt = {
                                 </span>
                             </div>
                             <Divider class="!my-3 !border-gray-100 dark:!border-[#3a3a3a]" />
-                            <div v-if="!isPago" class="grid grid-cols-2 gap-4">
+                            <div v-if="!isPago" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
@@ -575,7 +634,7 @@ const tagPt = {
                                     </span>
                                 </div>
                             </div>
-                            <div v-else class="grid grid-cols-2 gap-4">
+                            <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago real</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
@@ -674,9 +733,10 @@ const tagPt = {
                                 </div>
                             </div>
                         </div>
+                        <div class="overflow-x-auto">
                         <DataTable
                             :value="invoice.items"
-                            tableStyle="min-width: 40rem"
+                            tableStyle="min-width: 28rem"
                             :pt="dataTablePt"
                         >
                             <Column field="quantity" header="Cant.">
@@ -684,7 +744,7 @@ const tagPt = {
                                     <span class="text-sm text-gray-900 dark:text-gray-200">{{ parseFloat(data.quantity) }}</span>
                                 </template>
                             </Column>
-                            <Column field="sat_product_code" header="Clave SAT">
+                            <Column field="sat_product_code" header="Clave SAT" class="hidden sm:table-cell" bodyClass="hidden sm:table-cell">
                                 <template #body="{ data }">
                                     <span class="text-xs text-gray-500 dark:text-gray-400">{{ data.sat_product_code || '—' }}</span>
                                 </template>
@@ -705,6 +765,7 @@ const tagPt = {
                                 </template>
                             </Column>
                         </DataTable>
+                        </div>
                     </div>
 
                     <!-- Documentos del pago (CFDI de Pago) -->
@@ -720,7 +781,8 @@ const tagPt = {
                                 </div>
                             </div>
                         </div>
-                        <DataTable :value="invoice.pago_documentos || []" tableStyle="min-width: 40rem" :pt="dataTablePt">
+                        <div class="overflow-x-auto">
+                        <DataTable :value="invoice.pago_documentos || []" tableStyle="min-width: 38rem" :pt="dataTablePt">
                             <Column field="folio" header="Folio">
                                 <template #body="{ data }">
                                     <span class="text-sm text-gray-900 dark:text-gray-200">{{ data.folio || '—' }}</span>
@@ -770,6 +832,7 @@ const tagPt = {
                                 </div>
                             </template>
                         </DataTable>
+                        </div>
                     </div>
 
                     <!-- Pagos relacionados (factura PPD) -->
@@ -785,7 +848,8 @@ const tagPt = {
                                 </div>
                             </div>
                         </div>
-                        <DataTable :value="relatedPayments || []" tableStyle="min-width: 40rem" :pt="dataTablePt">
+                        <div class="overflow-x-auto">
+                        <DataTable :value="relatedPayments || []" tableStyle="min-width: 34rem" :pt="dataTablePt">
                             <Column field="folio" header="CFDI de Pago">
                                 <template #body="{ data }">
                                     <Link :href="route('billing.invoices.show', data.id)" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1.5 no-underline">
@@ -818,6 +882,7 @@ const tagPt = {
                                 </div>
                             </template>
                         </DataTable>
+                        </div>
                         <div class="px-6 lg:px-8 pb-6 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-4">
                             <div class="flex flex-col gap-0.5">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Total de la factura</span>
@@ -921,6 +986,13 @@ const tagPt = {
             ref="cancelModalRef"
             :invoice="invoice"
             @success="router.reload()"
+        />
+
+        <!-- Modal: fecha de emisión vencida (>72 h) → timbrar hoy / editar fecha -->
+        <StampOldDateDialog
+            v-model:visible="showOldStampDialog"
+            @stamp-today="stampWithToday"
+            @edit="goToEditDraft"
         />
     </AppLayout>
 </template>

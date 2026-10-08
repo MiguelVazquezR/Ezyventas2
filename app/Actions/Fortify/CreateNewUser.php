@@ -5,12 +5,16 @@ namespace App\Actions\Fortify;
 use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
 use App\Models\PlanItem;
+use App\Models\ReferralCode;
+use App\Models\ReferralSettings;
+use App\Models\ReferralUsage;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 use Laravel\Jetstream\Jetstream;
 
@@ -30,14 +34,19 @@ class CreateNewUser implements CreatesNewUsers
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => $this->passwordRules(),
+            'referral_code' => ['nullable', 'string', 'max:20'],
             'terms' => Jetstream::hasTermsAndPrivacyPolicyFeature() ? ['accepted', 'required'] : '',
         ], [
             'business_name.unique' => 'Este nombre de negocio ya ha sido registrado.',
             'email.unique' => 'Este correo electrónico ya ha sido registrado.',
         ])->validate();
 
+        // Resolver (si viene) el cupón de referido. Se guarda como referido
+        // "en prueba": solo se hace válido cuando la suscripción haga su primer pago.
+        $referralCode = $this->resolveReferralCode($input['referral_code'] ?? null);
+
         // Usamos una transacción para asegurar que todas las operaciones se completen con éxito.
-        return DB::transaction(function () use ($input) {
+        return DB::transaction(function () use ($input, $referralCode) {
             
             // 1. Crear la Suscripción (el negocio)
             $subscription = Subscription::create([
@@ -47,6 +56,11 @@ class CreateNewUser implements CreatesNewUsers
                 'slug' => Str::slug($input['business_name']),
                 'status' => 'activo', // Asumiendo 'activo' como string. Usa un Enum si lo tienes.
             ]);
+
+            // 1.5 Registrar el referido pendiente (estado 'trial') si trae cupón.
+            if ($referralCode) {
+                $this->registerTrialReferral($subscription, $referralCode);
+            }
 
             // 2. Crear la Sucursal principal para la nueva suscripción
             $branch = $subscription->branches()->create([
@@ -89,6 +103,54 @@ class CreateNewUser implements CreatesNewUsers
 
             return $user;
         });
+    }
+
+    /**
+     * Valida y resuelve el cupón de referido opcional del registro.
+     */
+    protected function resolveReferralCode(?string $referralCodeInput): ?ReferralCode
+    {
+        if (empty($referralCodeInput)) {
+            return null;
+        }
+
+        $referralCode = ReferralCode::where('code', Str::upper(trim($referralCodeInput)))
+            ->where('is_active', true)
+            ->first();
+
+        if (! $referralCode) {
+            throw ValidationException::withMessages([
+                'referral_code' => 'El cupón de referido no es válido o ya no está activo.',
+            ]);
+        }
+
+        return $referralCode;
+    }
+
+    /**
+     * Crea el registro de referido en estado 'trial' (aún sin pago). Al hacer
+     * el primer pago, la acción de pago lo convertirá a 'pending' y aplicará
+     * el descuento y premio correspondientes.
+     */
+    protected function registerTrialReferral(Subscription $subscription, ReferralCode $referralCode): void
+    {
+        $settings = ReferralSettings::firstOrCreate([], [
+            'referred_discount_pct' => 15.00,
+            'referrer_reward_pct' => 50.00,
+            'referrer_ongoing_discount_pct' => 10.00,
+        ]);
+
+        ReferralUsage::create([
+            'referral_code_id'            => $referralCode->id,
+            'referred_subscription_id'    => $subscription->id,
+            'subscription_payment_id'     => null,
+            'reward_status'               => ReferralUsage::STATUS_TRIAL,
+            'referred_discount_pct'       => $settings->referred_discount_pct,
+            'referrer_reward_pct'         => $settings->referrer_reward_pct,
+            'referrer_ongoing_discount_pct' => $settings->referrer_ongoing_discount_pct,
+            'monthly_base_amount'         => null,
+            'reward_amount'               => null,
+        ]);
     }
 
     /**

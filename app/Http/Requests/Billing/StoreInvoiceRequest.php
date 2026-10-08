@@ -23,6 +23,17 @@ class StoreInvoiceRequest extends FormRequest
             'exportacion'           => ['required', 'string', 'max:5', 'in:01,02,03,04'],
             'tipo_comprobante'      => ['nullable', 'string', 'max:5', 'in:I,E,P,N,T'],
 
+            // --- Fecha de emisión ---
+            // Regla SAT: un CFDI no puede emitirse con una fecha de hace más
+            // de 72 horas ni con una fecha futura (el PAC solo tolera unos
+            // minutos de margen). El frontend restringe la selección; esto valida.
+            'issued_at'             => [
+                'nullable',
+                'date',
+                'after_or_equal:'.now()->subHours(72)->format('Y-m-d H:i:s'),
+                'before_or_equal:'.now()->addMinutes(5)->format('Y-m-d H:i:s'),
+            ],
+
             // --- Receiver (receptor) ---
             'receiver_rfc'          => ['required', 'string'],
             'receiver_legal_name'   => ['required', 'string', 'max:255'],
@@ -195,6 +206,8 @@ class StoreInvoiceRequest extends FormRequest
         return [
             'fiscal_profile_id.required'     => 'Selecciona un emisor fiscal.',
             'fiscal_profile_id.exists'       => 'El emisor fiscal seleccionado no existe.',
+            'issued_at.after_or_equal'       => 'La fecha de emisión no puede ser de hace más de 72 horas.',
+            'issued_at.before_or_equal'      => 'La fecha de emisión no puede ser futura.',
             'transaction_id.exists'          => 'La venta seleccionada no existe o no pertenece a esta sucursal.',
             'exportacion.required'           => 'El campo exportación es obligatorio.',
             'exportacion.in'                 => 'El valor de exportación no es válido.',

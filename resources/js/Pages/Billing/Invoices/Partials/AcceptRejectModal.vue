@@ -387,9 +387,10 @@ defineExpose({ open });
                     {{ historyError }}
                 </Message>
 
+                <div class="overflow-x-auto">
                 <DataTable
                     :value="history"
-                    tableStyle="min-width: 40rem"
+                    tableStyle="min-width: 34rem"
                     :pt="dataTablePt"
                 >
                     <Column header="Fecha">
@@ -427,17 +428,18 @@ defineExpose({ open });
                         </div>
                     </template>
                 </DataTable>
+                </div>
             </div>
         </div>
 
         <template #footer>
-            <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+            <div class="flex flex-col sm:flex-row justify-end items-stretch sm:items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
                 <Button
                     label="Cerrar"
                     text
                     @click="close"
                     :disabled="submitting"
-                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
+                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold !justify-center w-full sm:w-auto"
                 />
                 <Button
                     v-if="activeTab === 'responder' && !result"
@@ -446,7 +448,7 @@ defineExpose({ open });
                     :severity="decision === 'Rechazo' ? 'danger' : 'success'"
                     :loading="submitting"
                     @click="submit"
-                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm"
+                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm !justify-center w-full sm:w-auto"
                 />
             </div>
         </template>

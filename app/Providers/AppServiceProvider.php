@@ -8,8 +8,12 @@ use App\Models\Billing\StampMovement;
 use App\Models\Billing\StampPurchase;
 use App\Observers\Billing\StampMovementObserver;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +34,19 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production')) {
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }
+
+        // ── Mobile API (/api/*) rate limiters ──
+        // General traffic: 60 requests per minute per user (or IP when anonymous).
+        RateLimiter::for('api', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
+        // Login attempts: 5 per minute per email + IP, to slow down brute force.
+        RateLimiter::for('api-login', function (Request $request) {
+            $throttleKey = Str::transliterate(Str::lower((string) $request->input('email')).'|'.$request->ip());
+
+            return Limit::perMinute(5)->by($throttleKey);
+        });
 
         Gate::before(function ($user, $ability) {
             // Superadmin (ID 1) tiene acceso irrestricto para fines de soporte
