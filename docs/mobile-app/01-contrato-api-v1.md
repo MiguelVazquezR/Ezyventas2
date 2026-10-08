@@ -1412,6 +1412,12 @@ Es exactamente el mismo objeto que `custom_field_definitions` del detalle, así 
 renderizador. `type` ∈ `text` | `number` | `textarea` | `boolean` | `pattern` | `select` | `checkbox`;
 `options` es un arreglo solo en `select`/`checkbox`.
 
+> 📄 **Obligatorio antes de implementar el formulario o el detalle:** la forma del **valor** guardado
+> depende del `type` (el de `pattern` es un objeto `{ type, value }`, el de `checkbox` un arreglo, el
+> de `boolean` un booleano) y el backend **no lo valida ni lo transforma**. El contrato completo por
+> tipo, la inicialización, el envío en JSON y multipart, las normalizaciones de lectura y el
+> renderizado esperado están en **`04-campos-personalizados-ordenes-servicio.md`**.
+
 ### `GET /service-orders/{id}` — ✅ implementado (Fase 2)
 Permiso: `services.orders.see_details`.
 

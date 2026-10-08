@@ -12,7 +12,9 @@ Laravel, sobre la **misma base de datos de producción**.
 | `01-contrato-api-v1.md` | Contrato completo de la API: endpoints, permisos, request y response JSON de cada uno. |
 | `02-modelo-de-datos.md` | Tablas, columnas, relaciones y enums que usa la app móvil. |
 | `03-design-system-tesla-ui.md` | Design system "Tesla UI": colores exactos, **reglas de contraste**, tipografía, formas, copy de pantallas y mapeo a widgets Flutter. |
+| `04-campos-personalizados-ordenes-servicio.md` | **Campos personalizados de las órdenes de servicio:** los 7 tipos (`text`, `number`, `textarea`, `boolean`, `select`, `checkbox`, `pattern`), el contrato exacto del valor guardado, cómo se envía (JSON vs multipart), el caso especial del patrón de desbloqueo y cómo renderizar cada tipo en el formulario y en la vista de la orden. |
 | `prompts/4b-inicio-dashboard.md` | **Prompt listo para copiar** al agente de la app: qué secciones leer (y cuáles no), entregables, reglas no negociables y criterios de aceptación de la pantalla de inicio. |
+| `prompts/4c-campos-personalizados-ordenes-servicio.md` | **Prompt listo para copiar** al agente de la app: cómo hacer que los campos personalizados se pinten por tipo (editor y lectura) en el formulario y el detalle de la orden — leerlo junto con `04-campos-personalizados-ordenes-servicio.md`. |
 
 ## Reglas de oro
 
@@ -132,5 +134,8 @@ Verificación rápida: `php artisan route:list --path=api/v1` y
 2. `01-contrato-api-v1.md` — qué endpoints existen y con qué payloads.
 3. `02-modelo-de-datos.md` — qué significan los campos y enums.
 4. `03-design-system-tesla-ui.md` — cómo debe verse y sentirse la app.
+5. `04-campos-personalizados-ordenes-servicio.md` — **obligatorio** antes de tocar el formulario de
+   órdenes de servicio o su vista de detalle: define los 7 tipos de campo personalizado y cómo debe
+   verse cada uno (nunca como texto plano).
 
 > Estado del documento: Fase 0 (diseño). Se actualiza al cerrar cada fase de implementación.

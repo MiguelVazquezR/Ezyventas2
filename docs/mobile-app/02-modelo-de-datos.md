@@ -278,7 +278,7 @@ carrito se aplicaron a la venta.
 | `discount_value` | decimal nullable | valor capturado |
 | `discount_amount` | decimal default 0 | descuento en pesos |
 | `final_total` | decimal nullable | `subtotal - discount_amount` |
-| `custom_fields` | json nullable | campos personalizados (`key => value`) |
+| `custom_fields` | json nullable | campos personalizados (`key => value`; el valor depende del `type` de la definición — ver `04-campos-personalizados-ordenes-servicio.md`) |
 
 ### `service_order_items`
 `id`, `service_order_id`, `itemable_type`, `itemable_id`, `description`,
@@ -300,11 +300,22 @@ La app sube archivos como **multipart** (`initial_evidence_images[]`,
 
 ### `custom_field_definitions`
 `id`, `subscription_id`, `module` (`service_orders`), `name` (etiqueta visible),
-`key` (clave dentro de `custom_fields`), `type` (`text` | `number` | `boolean` | `textarea`),
-`options` (json), `is_required`. Único por (`subscription_id`, `module`, `key`).
+`key` (clave dentro de `custom_fields`), `type`, `options` (json), `is_required`.
+Único por (`subscription_id`, `module`, `key`). El `key` **no cambia** al renombrar el campo.
+
+Tipos válidos (los 7 que valida el backend):
+`text` | `number` | `textarea` | `boolean` | `select` | `checkbox` | `pattern` (desbloqueo celular).
 
 La app debe **renderizar dinámicamente** el formulario de `custom_fields` a partir de estas
-definiciones: `text`/`textarea` → campo de texto, `number` → numérico, `boolean` → switch.
+definiciones: `text`/`textarea` → campo de texto, `number` → numérico, `boolean` → switch,
+`select` → selección única, `checkbox` → selección múltiple y `pattern` → tablero de desbloqueo.
+
+> ⚠️ El **valor** guardado depende del tipo (el de `pattern` es un objeto `{type, value}` y el de
+> `checkbox` un arreglo) y el **backend no lo valida ni lo normaliza**. Antes de implementar el
+> formulario o la vista de detalle, leer
+> **`04-campos-personalizados-ordenes-servicio.md`**, que documenta el contrato de valor por tipo,
+> la inicialización, el envío (JSON vs multipart), las normalizaciones de lectura y el renderizado
+> esperado de cada tipo.
 
 ### `activity_log` (Spatie Activitylog)
 `log_name`, `description`, `subject_type`, `subject_id`, `causer_type`, `causer_id`,
