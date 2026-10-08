@@ -62,7 +62,7 @@ const form = useForm({
     variants_matrix: [],
     composite_items: [],
     general_images: [],
-    variant_images: [],
+    variant_images: {},
 });
 
 // Modales de Gestión
@@ -74,6 +74,9 @@ const showAttributesModal = ref(false);
 const localCategories = ref([...props.categories]);
 const localBrands = ref([...props.brands]);
 const localProviders = ref([...props.providers]);
+// Copia reactiva de los atributos: el modal de atributos notifica los cambios y así el
+// generador de variantes y las imágenes obligatorias se reflejan al instante sin recargar.
+const localAttributeDefinitions = ref(props.attributeDefinitions.map(attribute => ({ ...attribute })));
 
 // Callbacks para Modales
 const handleNewCategory = (c) => { localCategories.value.push(c); form.category_id = c.id; };
@@ -87,6 +90,15 @@ const handleBrandDelete = (id) => { localBrands.value = localBrands.value.filter
 const handleNewProvider = (p) => { localProviders.value.push(p); form.provider_id = p.id; };
 const handleProviderUpdate = (p) => { const idx = localProviders.value.findIndex(x => x.id === p.id); if (idx !== -1) localProviders.value[idx] = p; };
 const handleProviderDelete = (id) => { localProviders.value = localProviders.value.filter(p => p.id !== id); if (form.provider_id === id) form.provider_id = null; };
+
+// Reemplaza únicamente los atributos de la categoría editada, conservando los de las demás
+const handleAttributesUpdated = ({ categoryId, attributes }) => {
+    const otherCategories = localAttributeDefinitions.value.filter(
+        attribute => Number(attribute.category_id) !== Number(categoryId)
+    );
+    localAttributeDefinitions.value = [...otherCategories, ...attributes]
+        .sort((a, b) => a.name.localeCompare(b.name));
+};
 
 // --- LÓGICA DE NAVEGACIÓN ---
 const formSections = [
@@ -162,7 +174,7 @@ const submit = () => {
                     <div id="inventory">
                         <Inventory 
                             :form="form" 
-                            :attributeDefinitions="attributeDefinitions"
+                            :attributeDefinitions="localAttributeDefinitions"
                             @open-attributes="showAttributesModal = true"
                         />
                     </div>
@@ -174,7 +186,7 @@ const submit = () => {
                     <div id="images">
                         <Images 
                             :form="form" 
-                            :attributeDefinitions="attributeDefinitions"
+                            :attributeDefinitions="localAttributeDefinitions"
                         />
                     </div>
 
@@ -189,7 +201,7 @@ const submit = () => {
         <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory" @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
         <ManageBrandsModal v-model:visible="showBrandModal" @created="handleNewBrand" @updated="handleBrandUpdate" @deleted="handleBrandDelete" />
         <ManageProvidersModal v-model:visible="showProviderModal" @created="handleNewProvider" @updated="handleProviderUpdate" @deleted="handleProviderDelete" />
-        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal" :category-id="form.category_id" />
+        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal" :category-id="form.category_id" @updated="handleAttributesUpdated" />
         
         <!-- Usamos el ConfirmPopup para las eliminaciones dentro de los componentes parciales -->
         <ConfirmPopup group="price-tiers-delete" />
