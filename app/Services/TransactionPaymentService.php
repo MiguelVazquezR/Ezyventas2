@@ -6,6 +6,7 @@ use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Exceptions\Pos\PaymentExceedsPendingBalanceException;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductAttribute;
@@ -35,9 +36,18 @@ class TransactionPaymentService
     ): Transaction {
         return DB::transaction(function () use ($validatedData, $user, $customer, $initialStatus, $debtType) {
             $now = now();
-            $totalSale = (float) $validatedData['total'];
             $paymentsFromRequest = $validatedData['payments'] ?? [];
             $sessionId = $validatedData['cash_register_session_id'];
+
+            // Totals are always recalculated from the cart: neither the web nor
+            // the phone can under-charge a discounted line by sending a
+            // different subtotal, and the three buttons book the same numbers.
+            $totals = $this->cartTotals(
+                $validatedData['cartItems'],
+                (float) ($validatedData['total_discount'] ?? 0),
+            );
+
+            $totalSale = $totals['total'];
 
             // 1. Crear la Transacción (Folio generado desde el modelo)
             $transaction = Transaction::create([
@@ -49,8 +59,8 @@ class TransactionPaymentService
                 'user_id' => $user->id,
                 'status' => $initialStatus,
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $validatedData['subtotal'],
-                'total_discount' => $validatedData['total_discount'] ?? 0,
+                'subtotal' => $totals['subtotal'],
+                'total_discount' => $totals['total_discount'],
                 'total_tax' => 0,
                 'currency' => 'MXN',
                 'status_changed_at' => $now,
@@ -72,8 +82,9 @@ class TransactionPaymentService
 
             // 4. Aplicar Pagos Directos
             $totalDue = $totalSale - $balanceToUse;
-            if (!empty($paymentsFromRequest)) {
-                $paymentsToProcess = $this->capPaymentsToAmount($paymentsFromRequest, $totalDue);
+            $paymentsToProcess = $this->paymentsWithinBalance($paymentsFromRequest, $totalDue)['payments'];
+
+            if (!empty($paymentsToProcess)) {
                 $this->applyDirectPayments($transaction, $paymentsToProcess, $sessionId);
             }
 
@@ -86,28 +97,18 @@ class TransactionPaymentService
                     throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
                 }
 
-                // --- FIX: COBRO AUTOMÁTICO DE SALDO ---
-                // Si aún hay deuda y el cliente tiene saldo a favor, el sistema fuerza
-                // el uso de ese saldo como PAGO antes de generar una deuda real.
-                // Esto genera el registro de "Payment" tipo BALANCE y cuadra la transacción.
-                if ($customer->balance > 0) {
-                    $forcedBalanceToUse = min($remainingDue, (float) $customer->balance);
-                    $this->applyBalanceAsPayment($transaction, $customer, $forcedBalanceToUse, $sessionId, "Cobro automático de saldo a favor por venta #{$transaction->folio}", clone $now);
-                    
-                    $transaction->refresh();
-                    $remainingDue = $transaction->remaining_due;
+                if ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit) {
+                    throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
                 }
 
-                // Si aún queda deuda después de agotar el saldo a favor, aplicamos la deuda.
-                if ($remainingDue > 0.01) {
-                    if ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit) {
-                        throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
-                    }
-                    $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
-                }
-            } 
+                // The customer balance is only spent when the request asked for
+                // it (`use_balance`, step 3): charging it on its own would take
+                // money the cashier never decided to use and would settle the
+                // sale without a trace in the ticket.
+                $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
+            }
             
-            // 6. Evaluación final: ¿Se pagó completa? (Con pagos, saldo automático, etc.)
+            // 6. Evaluación final: ¿Se pagó completa? (Con pagos, saldo, etc.)
             if ($transaction->fresh()->isFullyPaid()) {
                 $transaction->update(['status' => TransactionStatus::COMPLETED]);
                 if ($initialStatus === TransactionStatus::ON_LAYAWAY) {
@@ -122,11 +123,57 @@ class TransactionPaymentService
         });
     }
 
+    /**
+     * Cart totals of a sale, a layaway or an order: one single rule, shared by
+     * the web POS (`ShoppingCart.vue`) and the phone.
+     *
+     * - `subtotal` = Σ(list price × quantity), where the list price of a line is
+     *   `unit_price + discount` (the contract sends the discount per unit).
+     * - `total_discount` = what the caller sends (item discounts plus any
+     *   discount applied to the whole cart).
+     * - `total` = `subtotal - total_discount` (+ `shipping_cost` on an order).
+     *
+     * @param  array<int, array<string, mixed>>  $cartItems
+     * @return array{subtotal: float, total_discount: float, total: float}
+     */
+    public function cartTotals(array $cartItems, float $totalDiscount = 0.0, float $shippingCost = 0.0): array
+    {
+        $subtotal = 0.0;
+
+        foreach ($cartItems as $item) {
+            $unitPrice = (float) ($item['unit_price'] ?? 0);
+            $unitDiscount = (float) ($item['discount'] ?? 0);
+            $quantity = (float) ($item['quantity'] ?? 0);
+
+            // "Aumento manual" sends a negative discount: the list price stays
+            // the base and the total grows by that amount (same as the web).
+            $subtotal += ($unitPrice + $unitDiscount) * $quantity;
+        }
+
+        $subtotal = round($subtotal, 2);
+        $totalDiscount = round($totalDiscount, 2);
+
+        return [
+            'subtotal' => $subtotal,
+            'total_discount' => $totalDiscount,
+            'total' => round($subtotal - $totalDiscount + $shippingCost, 2),
+        ];
+    }
+
     public function handleNewOrder(User $user, array $data): Transaction
     {
         return DB::transaction(function () use ($user, $data) {
             $now = now();
             $sessionId = $data['cash_register_session_id'];
+            $shippingCost = (float) ($data['shipping_cost'] ?? 0);
+
+            // Same rule as the sale: the subtotal comes from the list prices of
+            // the cart, not from what the client sends.
+            $totals = $this->cartTotals(
+                $data['cartItems'],
+                (float) ($data['total_discount'] ?? 0),
+                $shippingCost,
+            );
 
             $transaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
@@ -138,9 +185,9 @@ class TransactionPaymentService
                 'status' => TransactionStatus::TO_DELIVER,
                 'delivery_status' => 'pending',
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $data['subtotal'],
-                'shipping_cost' => $data['shipping_cost'] ?? 0,
-                'total_discount' => $data['total_discount'] ?? 0,
+                'subtotal' => $totals['subtotal'],
+                'shipping_cost' => $shippingCost,
+                'total_discount' => $totals['total_discount'],
                 'total_tax' => 0,
                 'currency' => 'MXN',
                 'notes' => $data['notes'] ?? null,
@@ -155,9 +202,15 @@ class TransactionPaymentService
         });
     }
 
-    public function applyPaymentToTransaction(Transaction $transaction, array $validatedData, int $sessionId): void
+    /**
+     * Registers an abono and returns the cash change to give back.
+     *
+     * @param  array<string, mixed>  $validatedData
+     * @return float  money offered by the client that the sale did not keep
+     */
+    public function applyPaymentToTransaction(Transaction $transaction, array $validatedData, int $sessionId): float
     {
-        DB::transaction(function () use ($transaction, $validatedData, $sessionId) {
+        return DB::transaction(function () use ($transaction, $validatedData, $sessionId) {
             $customer = $transaction->customer;
             $now = now();
             $remainingDue = $transaction->remaining_due;
@@ -167,20 +220,28 @@ class TransactionPaymentService
             if ($remainingDue <= 0.01) throw new Exception('Esta transacción ya está completamente pagada.');
 
             $balanceToUse = (!empty($validatedData['use_balance']) && $customer) ? min($customer->balance, $remainingDue) : 0;
-            $totalFromPayments = !empty($validatedData['payments']) ? array_sum(array_column($validatedData['payments'], 'amount')) : 0;
 
-            if (($balanceToUse + $totalFromPayments) > $remainingDue + 0.01) {
-                throw new Exception('El monto total del pago excede el saldo pendiente.');
-            }
+            // The same rule as a sale: cash may exceed the pending balance (the
+            // extra money is the change handed back) and any other method that
+            // exceeds it is rejected with `payment_exceeds_pending`.
+            $payment = $this->paymentsWithinBalance(
+                $validatedData['payments'] ?? [],
+                round($remainingDue - $balanceToUse, 2),
+            );
+
+            $paymentsToProcess = $payment['payments'];
 
             if ($balanceToUse > 0) {
                 $this->applyBalanceAsPayment($transaction, $customer, $balanceToUse, $sessionId, "Uso de saldo a favor en abono #{$transaction->folio}", clone $now);
             }
 
-            if ($totalFromPayments > 0) {
-                $this->applyDirectPayments($transaction, $validatedData['payments'], $sessionId);
+            if (!empty($paymentsToProcess)) {
+                $this->applyDirectPayments($transaction, $paymentsToProcess, $sessionId);
+
                 if ($customer) {
-                    $customer->payDebt($totalFromPayments, $transaction->id, "Abono a O.S. / Apartado #{$transaction->folio}", $now->copy()->addSecond());
+                    // Only the money that was really collected settles the debt.
+                    $collected = (float) array_sum(array_column($paymentsToProcess, 'amount'));
+                    $customer->payDebt($collected, $transaction->id, "Abono a O.S. / Apartado #{$transaction->folio}", $now->copy()->addSecond());
                 }
             }
 
@@ -191,6 +252,8 @@ class TransactionPaymentService
                     $this->finalizeTransactionStock($transaction, clone $now);
                 }
             }
+
+            return $payment['change'];
         });
     }
 
@@ -418,21 +481,53 @@ class TransactionPaymentService
             });
     }
 
-    private function capPaymentsToAmount(array $payments, float $maxAmount): array
+    /**
+     * Payments of a sale that fit in the pending balance.
+     *
+     * One single rule for a sale (checkout / layaway) and for an abono: cash may
+     * exceed the balance, because the extra money is the change handed back to
+     * the customer, so only the amount that settles the sale is stored. Card,
+     * transfer or balance that exceed it are rejected with the same answer in
+     * both endpoints (`payment_exceeds_pending`).
+     *
+     * @param  array<int, array<string, mixed>>  $payments
+     * @return array{payments: array<int, array<string, mixed>>, change: float}
+     */
+    public function paymentsWithinBalance(array $payments, float $pendingBalance): array
     {
-        $totalPaid = collect($payments)->sum('amount');
-        if ($totalPaid <= $maxAmount) return $payments;
+        if (empty($payments)) {
+            return ['payments' => [], 'change' => 0.0];
+        }
 
-        $cappedPayments = [];
-        $runningTotal = 0;
+        $offered = round((float) collect($payments)->sum('amount'), 2);
+
+        if ($offered <= $pendingBalance + 0.01) {
+            return ['payments' => $payments, 'change' => 0.0];
+        }
+
+        $cashOnly = collect($payments)->every(
+            fn (array $payment) => ($payment['method'] ?? null) === PaymentMethod::CASH->value
+        );
+
+        if (!$cashOnly) {
+            throw PaymentExceedsPendingBalanceException::make();
+        }
+
+        // Change: store only the money that settles the sale, line by line.
+        $capped = [];
+        $runningTotal = 0.0;
+
         foreach ($payments as $payment) {
-            $amountToCap = $maxAmount - $runningTotal;
-            if ($amountToCap <= 0) break;
+            $amountToRecord = round(min((float) $payment['amount'], $pendingBalance - $runningTotal), 2);
 
-            $amountToRecord = min((float) $payment['amount'], $amountToCap);
-            $cappedPayments[] = array_merge($payment, ['amount' => $amountToRecord]);
+            if ($amountToRecord <= 0.01) {
+                break;
+            }
+
+            $capped[] = array_merge($payment, ['amount' => $amountToRecord]);
             $runningTotal += $amountToRecord;
         }
-        return $cappedPayments;
+
+        return ['payments' => $capped, 'change' => round($offered - $pendingBalance, 2)];
     }
 }

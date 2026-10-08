@@ -132,6 +132,7 @@ const getContextLabel = (type) => {
         'service_order': 'Órdenes de servicio',
         'quote': 'Cotizaciones',
         'customer': 'Clientes',
+        'cash_register': 'Corte de caja',
         'general': 'General',
     };
     return labels[type] || 'General';

@@ -10,5 +10,6 @@ enum TemplateContextType: string
     case SERVICE_ORDER = 'service_order';
     case QUOTE = 'quote';
     case CUSTOMER = 'customer';
+    case CASH_REGISTER = 'cash_register'; // corte y cierre de caja
     case GENERAL = 'general'; // Para plantillas sin variables específicas (ej. solo logo y texto fijo)
 }
