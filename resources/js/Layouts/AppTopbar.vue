@@ -38,6 +38,7 @@ const userMenuItems = computed(() => {
     }
     items.push(
         { label: 'Soporte', icon: 'pi pi-headphones', command: () => { supportModalVisible.value = true; } },
+        { label: 'Centro de ayuda', icon: 'pi pi-book', command: () => router.get(route('help-center.index')) },
         { label: 'Cerrar sesión', icon: 'pi pi-sign-out', command: () => router.post(route('logout')) },
     );
     return items;

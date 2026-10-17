@@ -4,7 +4,6 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OnboardingController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
-use Inertia\Inertia;
 use Laravel\Jetstream\Agent;
 use Illuminate\Http\Request;
 use App\Models\Waitlist;
@@ -83,13 +82,10 @@ require __DIR__ . '/web/release-notes.php';
 require __DIR__ . '/web/online-store.php';
 require __DIR__ . '/web/referrals.php';
 require __DIR__ . '/web/billing.php';
+require __DIR__ . '/web/help-center.php';
 
 // AI Agent routes — loaded here so they inherit the web middleware group
 require base_path('packages/ai-agent/routes/ai-agent.php');
-
-Route::get('/centro-ayuda', function () {
-    return Inertia::render('HelpCenter');
-})->name('help-center');
 
 //artisan commands -------------------
 Route::get('/clear-all', function () {

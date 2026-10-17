@@ -264,6 +264,12 @@ const adminModel = ref([
                 to: route('admin.tutorials.index'),
                 routeName: 'admin.tutorials.*'
             },
+            {
+                label: 'Guías de ayuda',
+                icon: 'pi pi-book',
+                to: route('admin.help-articles.index'),
+                routeName: 'admin.help-articles.*'
+            },
             ...(referralsEnabled.value ? [{
                 label: 'Referidos',
                 icon: 'pi pi-users',

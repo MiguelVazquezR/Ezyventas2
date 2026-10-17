@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 import AppLogo from '@/Components/AuthenticationCardLogo.vue';
 
 defineProps({
@@ -106,6 +106,22 @@ const dialogPt = {
                     </div>
                     <i class="pi pi-arrow-up-right !text-xs text-gray-400 ml-auto flex-shrink-0"></i>
                 </a>
+
+                <!-- Centro de ayuda -->
+                <Link
+                    :href="route('help-center.index')"
+                    class="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors no-underline group"
+                    @click="emit('update:visible', false)"
+                >
+                    <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary-500/20 transition-colors">
+                        <i class="pi pi-book text-primary-500 !text-lg"></i>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Centro de ayuda</span>
+                        <span class="text-sm text-primary-600 dark:text-primary-400 font-medium">Guías y videotutoriales</span>
+                    </div>
+                    <i class="pi pi-arrow-right !text-xs text-gray-400 ml-auto flex-shrink-0"></i>
+                </Link>
             </div>
         </div>
     </Dialog>
