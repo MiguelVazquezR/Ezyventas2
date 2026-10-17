@@ -9,7 +9,7 @@ use Laravel\Jetstream\Agent;
 use Illuminate\Http\Request;
 use App\Models\Waitlist;
 
-Route::get('/', function () {
+Route::middleware('track.visit')->get('/', function () {
     $agent = new Agent();
 
     if ($agent->isDesktop() || $agent->isLaptop()) {
@@ -18,6 +18,9 @@ Route::get('/', function () {
         return inertia('WelcomeMobile');
     }
 });
+
+// Android app download page (option A: informational page until the APK is published).
+Route::get('/descargar-app', fn () => inertia('DownloadApp'))->name('app.download')->middleware('track.visit');
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');

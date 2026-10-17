@@ -1,10 +1,10 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { Head, router, usePage, Link } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServicesModal from './Partials/ImportServicesModal.vue';
-import { usePermissions } from '@/Composables';
+import { usePermissions, useSupportWhatsApp } from '@/Composables';
 
 // Importamos el nuevo componente
 import ServiceDrawerDetails from './Partials/ServiceDrawerDetails.vue';
@@ -19,6 +19,11 @@ const page = usePage();
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseLimitUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el límite de servicios de mi cuenta en EzyVentas.'
+));
 
 // --- Estado y Lógica ---
 const selectedServices = ref([]);
@@ -190,9 +195,9 @@ const drawerPt = {
                         <p class="text-xs text-orange-700 dark:text-orange-300/80 m-0 mt-0.5">Has alcanzado el límite de servicios o variantes de tu plan actual.</p>
                     </div>
                 </div>
-                <Link :href="route('subscription.manage')">
-                    <Button label="Mejorar plan" size="small" severity="warning" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
-                </Link>
+                <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
+                    <Button label="Solicitar aumento" icon="pi pi-whatsapp" size="small" severity="success" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                </a>
             </div>
 
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">

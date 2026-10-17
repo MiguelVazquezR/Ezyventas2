@@ -11,6 +11,7 @@ import { useConfirm } from 'primevue/useconfirm';
 // Lógica de navegación
 import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
+import { useSupportWhatsApp } from '@/Composables';
 
 // Importación de Parciales Modulares
 import GeneralInfo from './Partials/GeneralInfo.vue';
@@ -29,6 +30,11 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseLimitUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el límite de productos de mi cuenta en EzyVentas.'
+));
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const items = ref([
@@ -135,12 +141,12 @@ const submit = () => {
             </div>
             <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-3">Límite de productos alcanzado</h2>
             <p class="text-gray-600 dark:text-gray-400 mb-8 max-w-lg mx-auto leading-relaxed">
-                Has alcanzado la cantidad máxima de productos permitidos en tu plan actual. Para seguir ampliando tu catálogo, necesitas mejorar tu suscripción.
+                Has alcanzado la cantidad máxima de productos permitidos en tu plan actual. Solicita un aumento de límite para seguir ampliando tu catálogo.
             </p>
             <div class="flex flex-col sm:flex-row justify-center gap-4">
-                <Link :href="route('subscription.manage')">
-                    <Button label="Mejorar suscripción" icon="pi pi-arrow-up" size="large" severity="primary" class="w-full sm:w-auto" />
-                </Link>
+                <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
+                    <Button label="Solicitar aumento por WhatsApp" icon="pi pi-whatsapp" size="large" severity="success" class="w-full sm:w-auto" />
+                </a>
                 <Link :href="route('products.index')">
                     <Button label="Volver al catálogo" icon="pi pi-arrow-left" size="large" severity="secondary" outlined class="w-full sm:w-auto" />
                 </Link>

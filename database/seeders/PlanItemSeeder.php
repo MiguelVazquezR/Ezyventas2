@@ -119,48 +119,49 @@ class PlanItemSeeder extends Seeder
             ]);
         }
 
-        // Límites
+        // Límites. La cantidad inicial es el límite fijo del plan gratuito
+        // (config/subscription.php), la única fuente de verdad de esos valores.
         $limits = [
             [
                 'key' => 'limit_branches',
                 'name' => 'Sucursales',
                 'price' => 30,
-                'quantity' => 1,
+                'quantity' => config('subscription.limits.limit_branches'),
                 'description' => 'Número de sucursales o ubicaciones físicas que puedes registrar en el sistema. Cada sucursal tiene su propio inventario, cajas y usuarios. Aumenta este límite cuando abras una nueva ubicación de tu negocio.',
             ],
             [
                 'key' => 'limit_users',
                 'name' => 'Usuarios',
                 'price' => 7.5,
-                'quantity' => 1,
+                'quantity' => config('subscription.limits.limit_users'),
                 'description' => 'Cantidad de empleados o colaboradores que pueden acceder al sistema con su propio usuario y permisos. Aumenta este límite conforme crezca tu equipo de trabajo.',
             ],
             [
                 'key' => 'limit_products',
                 'name' => 'Productos',
                 'price' => 1.5,
-                'quantity' => 100,
+                'quantity' => config('subscription.limits.limit_products'),
                 'description' => 'Cantidad máxima de productos que puedes tener registrados en tu catálogo. Aumenta este límite si tu inventario supera la capacidad actual de tu plan.',
             ],
             [
                 'key' => 'limit_services',
                 'name' => 'Servicios',
                 'price' => 1.5,
-                'quantity' => 100,
+                'quantity' => config('subscription.limits.limit_services'),
                 'description' => 'Cantidad máxima de servicios o reparaciones que ofreces en tu negocio. Aumenta este límite si tu oferta de servicios supera la capacidad actual de tu plan.',
             ],
             [
                 'key' => 'limit_cash_registers',
                 'name' => 'Cajas Registradoras',
                 'price' => 7.5,
-                'quantity' => 1,
+                'quantity' => config('subscription.limits.limit_cash_registers'),
                 'description' => 'Número de cajas registradoras que pueden operar simultáneamente en tu negocio. Aumenta este límite cuando necesites más puntos de cobro para atender a más clientes a la vez.',
             ],
             [
                 'key' => 'limit_print_templates',
                 'name' => 'Plantillas personalizadas',
                 'price' => 3,
-                'quantity' => 1,
+                'quantity' => config('subscription.limits.limit_print_templates'),
                 'description' => 'Cantidad de plantillas de impresión personalizadas que puedes diseñar para tus tickets, cotizaciones y facturas. Aumenta este límite si necesitas distintos formatos de impresión para diferentes tipos de comprobante.',
             ],
         ];

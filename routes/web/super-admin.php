@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AdminStampPurchaseController;
 use App\Http\Controllers\Admin\AdminStampPricingController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
 use App\Http\Controllers\Admin\AdminTutorialController;
+use App\Http\Controllers\Admin\AdminVisitController;
 use App\Http\Controllers\Admin\AiAgentSettingsController;
 use App\Http\Controllers\Admin\AdminPacAccountController;
 use App\Http\Controllers\Admin\AdminStampReservationController;
@@ -20,6 +21,9 @@ use Illuminate\Support\Facades\Route;
 // (el que da acceso a tu Usuario ID 1)
 Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admin.')->group(function () {
     
+    // --- Visitas del sitio público ---
+    Route::get('visits', [AdminVisitController::class, 'index'])->name('visits.index');
+
     // --- Reportes / Dashboard Super Admin ---
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
 

@@ -27,12 +27,12 @@ export default defineConfig({
         })
     ],
     //comentar los siguientes bloques si no se usa el dominio ezyventas2.test
-    // server: {
-    //     detectTls: 'ezyventas2.test',
-    //     // 💡 Añade este bloque hmr para corregir el WebSocket de Vite:
-    //     hmr: {
-    //         host: 'ezyventas2.test',
-    //         protocol: 'wss',
-    //     },
-    // },
+    server: {
+        detectTls: 'ezyventas2.test',
+        // 💡 Añade este bloque hmr para corregir el WebSocket de Vite:
+        hmr: {
+            host: 'ezyventas2.test',
+            protocol: 'wss',
+        },
+    },
 });

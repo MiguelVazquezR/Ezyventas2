@@ -9,7 +9,6 @@ import FiscalInfoCard from './Partials/FiscalInfoCard.vue';
 import PlanDetailsCard from './Partials/PlanDetailsCard.vue';
 import BranchesCard from './Partials/BranchesCard.vue';
 import BankAccountsCard from './Partials/BankAccountsCard.vue';
-import HistoryCard from './Partials/HistoryCard.vue';
 
 const props = defineProps({
     subscription: Object,
@@ -19,6 +18,7 @@ const props = defineProps({
     pendingPayment: Object, 
     lastRejectedPayment: Object,
     fiscalDocumentUrl: String,
+    plan: Object,
 });
 
 // --- Helpers Globales para pasar a hijos ---
@@ -51,7 +51,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
-    <Head title="Mi suscripción" />
+    <Head title="Mi cuenta" />
     <AppLayout>
         
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
@@ -66,11 +66,22 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
             <!-- Header Principal -->
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div>
-                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Mi suscripción</h1>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Mi cuenta</h1>
                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                         <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse"></span>
-                        Gestión de plan, sucursales y facturación
+                        Gestión de cuenta, sucursales y facturación
                     </p>
+
+                    <div class="flex flex-wrap items-center gap-2 mt-3">
+                        <span v-if="plan?.name" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-primary-500/10 text-primary-600 dark:text-primary-400">
+                            <i class="pi pi-verified !text-[10px]"></i>
+                            {{ plan.name }}
+                        </span>
+                        <span v-if="plan?.is_open_ended" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-green-500/10 text-green-600 dark:text-green-400">
+                            <i class="pi pi-infinity !text-[10px]"></i>
+                            Sin fecha de vencimiento
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -136,6 +147,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         :subscription-status="subscriptionStatus"
                         :pending-payment="pendingPayment"
                         :last-rejected-payment="lastRejectedPayment"
+                        :plan="plan"
                     />
 
                     <BranchesCard 
@@ -147,11 +159,6 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 
                     <BankAccountsCard 
                         :subscription="subscription" 
-                    />
-
-                    <HistoryCard 
-                        :subscription="subscription" 
-                        :fiscal-document-url="fiscalDocumentUrl" 
                     />
                 </div>
             </div>
