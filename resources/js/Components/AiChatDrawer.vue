@@ -182,7 +182,17 @@ function onMessagesClick(e) {
 
     if (url.origin === window.location.origin && !isDownload) {
         e.preventDefault();
-        router.visit(url.pathname + url.search); // SPA navigation, no full reload
+        router.visit(url.pathname + url.search + url.hash, {
+            // Guide links end with #guide-{id}. When the target page is already
+            // mounted (same module), the page's onMounted hook does not run again.
+            onSuccess: () => {
+                if (!url.hash) return;
+
+                window.setTimeout(() => {
+                    document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 200);
+            },
+        }); // SPA navigation, no full reload
     }
     // else: same-origin download or external link — let the browser handle it normally
 }

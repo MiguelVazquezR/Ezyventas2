@@ -131,10 +131,6 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         :main-branch="mainBranch" 
                         :pending-payment="pendingPayment" 
                     />
-                    
-                    <FiscalInfoCard 
-                        :fiscal-document-url="fiscalDocumentUrl" 
-                    />
                 </div>
 
                 <!-- Columna Derecha -->

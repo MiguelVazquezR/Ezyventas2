@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import TutorialVideoList from '@/Components/HelpCenter/TutorialVideoList.vue';
@@ -22,6 +22,19 @@ const formatDate = (value) => {
 const scrollTo = (id) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
+
+/**
+ * Links sent by the AI agent end with #guide-{id}. Inertia resets the scroll
+ * position after navigating, so wait a moment before jumping to the guide.
+ */
+onMounted(() => {
+    if (!window.location.hash) return;
+
+    setTimeout(() => {
+        document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
+});
+
 </script>
 
 <template>
