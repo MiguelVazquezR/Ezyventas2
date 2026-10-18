@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ExpenseStatus;
+use App\Enums\PaymentStatus;
 use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\Branch;
@@ -18,12 +19,14 @@ class FinancialReportService
     protected $branchId;
     protected $startDate;
     protected $endDate;
+    protected ?array $previousPeriod;
 
-    public function __construct(int $branchId, Carbon $startDate, Carbon $endDate)
+    public function __construct(int $branchId, Carbon $startDate, Carbon $endDate, ?array $previousPeriod = null)
     {
         $this->branchId = $branchId;
         $this->startDate = $startDate->copy()->startOfDay();
         $this->endDate = $endDate->copy()->endOfDay();
+        $this->previousPeriod = $previousPeriod;
     }
 
     public function generateReportData(): array
@@ -56,7 +59,7 @@ class FinancialReportService
 
         return Transaction::where('branch_id', $this->branchId)
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
-            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
             ->select(
                 DB::raw('HOUR(created_at) as hour'),
                 DB::raw('SUM(subtotal - total_discount + total_tax) as total_sales'),
@@ -143,17 +146,17 @@ class FinancialReportService
 
         $sales = $this->queryChartPoints(Transaction::class, 'created_at', $sqlDateFormat, $labels);
         $payments = $this->queryChartPoints(Payment::class, 'payment_date', $sqlDateFormat, $labels);
-        $expenses = $this->queryChartPoints(Expense::class, 'created_at', $sqlDateFormat, $labels);
+        $expenses = $this->queryChartPoints(Expense::class, 'expense_date', $sqlDateFormat, $labels);
 
         return ['labels' => $labels, 'sales' => $sales, 'payments' => $payments, 'expenses' => $expenses];
     }
 
     private function getPaymentMethodsDistribution()
     {
-        // CORRECCIÓN: Filtramos también los pagos de transacciones cambiadas/canceladas
+        // Filtramos también los pagos de transacciones canceladas, reembolsadas o cambiadas.
         $payments = Payment::where('status', 'completado')
             ->whereHas('transaction', fn($q) => $q->where('branch_id', $this->branchId)
-                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]))
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED]))
             ->whereBetween('payment_date', [$this->startDate, $this->endDate])
             ->groupBy('payment_method')
             ->select('payment_method', DB::raw('SUM(amount) as total'))
@@ -174,10 +177,10 @@ class FinancialReportService
 
     private function getSalesByChannel()
     {
-        // CORRECCIÓN: Filtrar ventas cambiadas/canceladas
+        // Filtramos ventas canceladas, reembolsadas o cambiadas.
         $results = Transaction::where('branch_id', $this->branchId)
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
-            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
             ->groupBy('channel')
             ->select(
                 'channel',
@@ -254,6 +257,39 @@ class FinancialReportService
         ];
     }
 
+    /**
+     * Detailed payments for the on-screen modal.
+     *
+     * Includes every completed payment method (including store credit and
+     * exchanges) and excludes payments from cancelled, refunded or changed
+     * sales so the list can be reconciled with the KPI and method totals.
+     */
+    public function getDetailedPayments(int $limit = 1000)
+    {
+        return Payment::query()
+            ->join('transactions', 'payments.transaction_id', '=', 'transactions.id')
+            ->where('transactions.branch_id', $this->branchId)
+            ->whereBetween('payments.payment_date', [$this->startDate, $this->endDate])
+            ->where('payments.status', PaymentStatus::COMPLETED->value)
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED->value, TransactionStatus::REFUNDED->value, TransactionStatus::CHANGED->value])
+            ->select(
+                'payments.id',
+                'payments.payment_date',
+                'payments.payment_method',
+                'payments.amount',
+                'payments.transaction_id',
+                'payments.bank_account_id'
+            )
+            ->with([
+                'transaction:id,folio,customer_id',
+                'transaction.customer:id,name',
+                'bankAccount:id,account_name,bank_name'
+            ])
+            ->orderBy('payments.payment_date', 'desc')
+            ->limit($limit)
+            ->get();
+    }
+
     private function getBankAccounts()
     {
         $subscriptionId = Branch::find($this->branchId)->subscription_id;
@@ -262,6 +298,13 @@ class FinancialReportService
 
     private function getComparisonPeriods(): array
     {
+        if ($this->previousPeriod !== null) {
+            return [
+                'current' => ['start' => $this->startDate, 'end' => $this->endDate],
+                'previous' => $this->previousPeriod,
+            ];
+        }
+
         $diffInDays = (int) round($this->startDate->floatDiffInDays($this->endDate->copy()->addSeconds(1)));
         if ($diffInDays < 1) {
             $diffInDays = 1;
@@ -285,7 +328,7 @@ class FinancialReportService
             // CORRECCIÓN: Filtro principal de totales (KPIs)
             $result = $query->where('branch_id', $this->branchId)
                 ->whereBetween($dateColumn, [$period['start'], $period['end']])
-                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
                 ->select(
                     DB::raw('SUM(subtotal) as total_subtotal'),
                     DB::raw('SUM(total_discount) as total_total_discount'),
@@ -295,10 +338,10 @@ class FinancialReportService
         }
 
         if ($model === Payment::class) {
-            // CORRECCIÓN: Asegurar que los pagos de ventas cambiadas tampoco sumen (opcional pero recomendado)
+            // Aseguramos que los pagos de ventas canceladas, reembolsadas o cambiadas tampoco sumen.
             $query->where('status', 'completado')
                 ->whereHas('transaction', fn($q) => $q->where('branch_id', $this->branchId)
-                    ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]));
+                    ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED]));
         } elseif ($model === Expense::class) {
             $query->where('branch_id', $this->branchId)->where('status', ExpenseStatus::PAID);
         }
@@ -331,7 +374,7 @@ class FinancialReportService
             // CORRECCIÓN: Filtro para la gráfica de ventas
             $results = $query->where('branch_id', $this->branchId)
                 ->whereBetween($dateColumn, [$this->startDate, $this->endDate])
-                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
                 ->select(
                     DB::raw("DATE_FORMAT({$dateColumn}, '{$sqlDateFormat}') as point"),
                     DB::raw('SUM(subtotal) as total_subtotal'),
@@ -357,9 +400,11 @@ class FinancialReportService
             // CORRECCIÓN: Filtro para la gráfica de pagos
             $query->where('status', 'completado')
                 ->whereHas('transaction', fn($q) => $q->where('branch_id', $this->branchId)
-                    ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]));
+                    ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED]));
         } elseif ($model === Expense::class) {
-            $query->where('branch_id', $this->branchId)->where('status', ExpenseStatus::PAID);
+            $query->where('branch_id', $this->branchId)
+                ->where('status', ExpenseStatus::PAID)
+                ->where('is_external', false);
         }
 
         $results = $query->whereBetween($dateColumn, [$this->startDate, $this->endDate])
@@ -405,7 +450,7 @@ class FinancialReportService
 
         $monthly = Transaction::where('branch_id', $branchId)
             ->where('created_at', '>=', $start)
-            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
             ->select(
                 DB::raw("DATE_FORMAT(created_at, '%Y-%m') as month"),
                 DB::raw('SUM(subtotal - total_discount + total_tax) as total'),

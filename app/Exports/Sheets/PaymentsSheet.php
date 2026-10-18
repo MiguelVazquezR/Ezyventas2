@@ -3,6 +3,7 @@
 namespace App\Exports\Sheets;
 
 use App\Models\Payment;
+use App\Enums\TransactionStatus;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
@@ -34,8 +35,11 @@ class PaymentsSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, 
         return Payment::query()
             ->where('status', 'completado')
             ->whereBetween('payment_date', [$this->startDate, $this->endDate])
-            ->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId))
-            ->with(['transaction.customer:id,name', 'transaction:id,folio,created_at']);
+            ->whereHas('transaction', fn ($q) => $q
+                ->where('branch_id', $this->branchId)
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED]))
+            ->with(['transaction.customer:id,name', 'transaction:id,folio,created_at'])
+            ->orderByDesc('payment_date');
     }
 
     /**
@@ -43,7 +47,7 @@ class PaymentsSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, 
      */
     public function title(): string
     {
-        return 'Pagos Recibidos';
+        return 'Pagos recibidos';
     }
 
     /**

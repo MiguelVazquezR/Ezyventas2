@@ -37,24 +37,24 @@ class ExpensesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, 
 
     public function title(): string
     {
-        return 'Detalle de Gastos';
+        return 'Detalle de gastos';
     }
 
     public function styles(Worksheet $sheet)
     {
-        $sheet->getStyle('A1:F1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:F1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEDEDED');
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:H1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FFEDEDED');
     }
 
     public function headings(): array
     {
-        return ['Fecha', 'Concepto', 'Categoría', 'Descripción', 'Monto', 'Método de Pago', 'Registrado por'];
+        return ['Fecha', 'Folio', 'Categoría', 'Descripción', 'Monto', 'Método de Pago', 'Origen', 'Registrado por'];
     }
 
     public function columnFormats(): array
     {
         return [
-            'D' => NumberFormat::FORMAT_CURRENCY_USD_SIMPLE,
+            'E' => NumberFormat::FORMAT_CURRENCY_USD_SIMPLE,
         ];
     }
 
@@ -67,6 +67,7 @@ class ExpensesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, 
             $expense->description,
             $expense->amount,
             $expense->payment_method->value,
+            $expense->is_external ? 'Externo' : 'Negocio',
             optional($expense->user)->name ?? 'N/A',
         ];
     }

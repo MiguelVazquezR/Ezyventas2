@@ -20,6 +20,16 @@ class HelpCenterTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // The application ships with the point of sale guides seeded by a
+        // migration. These tests build their own fixtures, so the shipped
+        // guides are removed to keep the expected counts deterministic.
+        HelpArticle::query()->delete();
+    }
+
     private function superAdmin(): User
     {
         $subscription = Subscription::factory()->create();

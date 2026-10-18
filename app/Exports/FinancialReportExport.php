@@ -2,13 +2,12 @@
 
 namespace App\Exports;
 
-use App\Enums\TransactionChannel;
+use App\Enums\TransactionStatus;
 use App\Exports\Sheets\ExpensesSheet;
 use App\Exports\Sheets\PaymentsSheet;
 use App\Exports\Sheets\SalesSheet;
 use App\Exports\Sheets\SummarySheet;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
-use Illuminate\Support\Facades\DB;
 use App\Models\Transaction;
 
 class FinancialReportExport implements WithMultipleSheets
@@ -37,6 +36,7 @@ class FinancialReportExport implements WithMultipleSheets
         // 3. Hojas de Ventas por Canal (dinámicamente)
         $channelsInPeriod = Transaction::where('branch_id', $this->branchId)
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
             ->select('channel')
             ->distinct()
             ->pluck('channel');
