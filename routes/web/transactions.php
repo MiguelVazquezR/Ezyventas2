@@ -4,7 +4,7 @@ use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
-    // Rutas para acciones especÃ­ficas
+    // Rutas para acciones especí­ficas
     Route::post('transactions/{transaction}/cancel', [TransactionController::class, 'cancel'])
         ->name('transactions.cancel');
 
