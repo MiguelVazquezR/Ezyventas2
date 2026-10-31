@@ -80,34 +80,6 @@ const readyFeatures = computed(() => {
 
         <div class="p-6 space-y-4">
 
-            <!-- Banner tipo regalo: 30 días gratis (verde suave para resaltar el CTA naranja) -->
-            <div class="relative overflow-hidden rounded-2xl ez-pop"
-                style="background: linear-gradient(120deg, #bbf7d0 0%, #d1fae5 55%, #ecfdf5 100%);">
-                <!-- Destellos decorativos -->
-                <div class="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-white/60 blur-2xl pointer-events-none"></div>
-                <i class="pi pi-star-fill absolute top-3 right-7 !text-[10px] text-[#059669]/25 ez-twinkle pointer-events-none"></i>
-                <i class="pi pi-star-fill absolute bottom-3 right-14 !text-[8px] text-[#059669]/20 ez-twinkle ez-twinkle-delay pointer-events-none"></i>
-
-                <div class="relative flex items-center gap-3.5 p-4">
-                    <div class="relative w-11 h-11 rounded-full bg-[#10b981]/15 border border-[#10b981]/25 flex items-center justify-center flex-shrink-0 ez-float">
-                        <div class="absolute inset-0 rounded-full border-2 border-dashed border-[#10b981]/30 animate-spin pointer-events-none" style="animation-duration: 14s;"></div>
-                        <i class="pi pi-gift !text-xl text-[#047857]"></i>
-                    </div>
-                    <div class="min-w-0 flex-1 text-left">
-                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[8.5px] font-bold uppercase tracking-widest bg-white/70 text-[#065f46] mb-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"></span>
-                            Regalo de bienvenida
-                        </span>
-                        <p class="text-base font-bold tracking-tight text-[#022c22] m-0 leading-tight">
-                            ¡Tienes 30 días gratis!
-                        </p>
-                        <p class="text-[11px] font-medium text-[#065f46]/75 m-0 mt-0.5 leading-relaxed">
-                            Prueba todas las herramientas desde el primer día. Al finalizar mantienes tu plan esencial y solo eliges los módulos que necesitas.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
             <!-- Módulos del plan esencial -->
             <div class="flex items-center justify-center">
                 <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest bg-green-500/10 text-green-600 dark:text-green-400">

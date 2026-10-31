@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { useForm, router } from '@inertiajs/vue3';
+import { useForm, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import InputError from '@/Components/InputError.vue';
@@ -26,11 +26,16 @@ const props = defineProps({
 
 // --- Estado Básico ---
 const confirm = useConfirm();
+const page = usePage();
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Suscripción', url: route('subscription.show') },
-    { label: props.mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }
+    { label: 'Mi cuenta', url: route('subscription.show') },
+    { label: props.mode === 'upgrade' ? 'Mejorar cuenta' : 'Renovar cuenta' }
 ]);
+
+// El programa de referidos está desactivado (config/subscription.php): el checkout
+// oculta el cupón y los desgloses de descuento, y cobra el precio completo.
+const referralsEnabled = computed(() => page.props.referralsEnabled === true);
 
 // --- Estado del Formulario ---
 const billingPeriod = ref(props.currentBillingPeriod || 'anual');
@@ -350,21 +355,21 @@ watch(() => form.referral_code, (newCode) => {
 const submit = () => {
     form.post(route('subscription.manage.store'), {
         onError: (errors) => {
-            console.error('Error al procesar la suscripción:', errors);
+            console.error('Error al procesar la cuenta:', errors);
         }
     });
 };
 </script>
 
 <template>
-    <AppLayout :title="mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción'">
+    <AppLayout :title="mode === 'upgrade' ? 'Mejorar cuenta' : 'Renovar cuenta'">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0 mb-6" />
 
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6 flex justify-between items-center">
                 <div>
                     <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
-                        {{ mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }}
+                        {{ mode === 'upgrade' ? 'Mejorar cuenta' : 'Renovar cuenta' }}
                     </h1>
                     <p v-if="mode === 'upgrade'" class="text-gray-500 dark:text-gray-400 mt-1">
                         Añade módulos o incrementa los límites de tu plan actual.
@@ -510,11 +515,11 @@ const submit = () => {
                                 <Divider />
                                 <div class="flex justify-between items-center font-bold text-lg">
                                     <span>{{ mode === 'upgrade' ? 'Total a pagar hoy' : 'Total del periodo' }}:</span>
-                                    <span :class="{ 'line-through text-gray-400 text-base font-normal': (billingPeriod === 'mensual' && referrerDiscountAmount > 0) || codeValidation?.valid }">{{ formatCurrency(form.total_amount) }}</span>
+                                    <span :class="{ 'line-through text-gray-400 text-base font-normal': referralsEnabled && ((billingPeriod === 'mensual' && referrerDiscountAmount > 0) || codeValidation?.valid) }">{{ formatCurrency(form.total_amount) }}</span>
                                 </div>
 
                                 <!-- Desglose de descuento continuo por ser referidor -->
-                                <div v-if="billingPeriod === 'mensual' && referrerDiscountAmount > 0" class="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-4 space-y-2">
+                                <div v-if="referralsEnabled && billingPeriod === 'mensual' && referrerDiscountAmount > 0" class="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-4 space-y-2">
                                     <div class="flex justify-between items-center text-sm">
                                         <span class="text-purple-700 dark:text-purple-300">Descuento por referidos activos ({{ referrerActiveDiscountPct }}%)</span>
                                         <span class="text-purple-700 dark:text-purple-300 font-medium">-{{ formatCurrency(referrerDiscountAmount) }}</span>
@@ -527,7 +532,7 @@ const submit = () => {
                                 </div>
 
                                 <!-- Mensaje informativo: descuento solo en mensual -->
-                                <div v-if="billingPeriod === 'anual' && referrerActiveDiscountPct > 0" class="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-4">
+                                <div v-if="referralsEnabled && billingPeriod === 'anual' && referrerActiveDiscountPct > 0" class="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-4">
                                     <div class="flex items-start gap-3">
                                         <i class="pi pi-info-circle mt-0.5 !text-sm text-purple-500"></i>
                                         <div>
@@ -540,7 +545,7 @@ const submit = () => {
                                 </div>
 
                                 <!-- Desglose de descuento por referido -->
-                                <div v-if="codeValidation?.valid && referralDiscountAmount > 0" class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-4 space-y-2">
+                                <div v-if="referralsEnabled && codeValidation?.valid && referralDiscountAmount > 0" class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-4 space-y-2">
                                     <div class="flex justify-between items-center text-sm">
                                         <span class="text-green-700 dark:text-green-300">Descuento por referido ({{ codeValidation.discount_pct }}%)</span>
                                         <span class="text-green-700 dark:text-green-300 font-medium">-{{ formatCurrency(referralDiscountAmount) }}</span>
@@ -553,7 +558,7 @@ const submit = () => {
                                 </div>
 
                                 <!-- --- CAMPO DE CÓDIGO DE REFERIDO --- -->
-                                <div v-if="isFirstPayment && !hasSavedReferral" class="mt-4 space-y-2">
+                                <div v-if="referralsEnabled && isFirstPayment && !hasSavedReferral" class="mt-4 space-y-2">
                                     <Divider />
                                     <div class="flex flex-col gap-1.5">
                                         <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">¿Tienes un código de referido?</label>
@@ -581,7 +586,7 @@ const submit = () => {
                                 </div>
 
                                 <!-- Cupón guardado en el registro (se aplica solo) -->
-                                <div v-else-if="isFirstPayment && hasSavedReferral" class="mt-4">
+                                <div v-else-if="referralsEnabled && isFirstPayment && hasSavedReferral" class="mt-4">
                                     <Divider />
                                     <div class="flex items-start gap-3 bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-4">
                                         <i class="pi pi-gift !text-base text-green-600 dark:text-green-400 mt-0.5"></i>
@@ -616,7 +621,7 @@ const submit = () => {
                                         </div>
                                     </Message>
                                     <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                                        Tu suscripción se activará automáticamente una vez que el pago sea confirmado por Mercado Pago.
+                                        Tu cuenta se activará automáticamente una vez que el pago sea confirmado por Mercado Pago.
                                     </p>
                                 </div>
 

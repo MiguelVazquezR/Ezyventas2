@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-import { usePermissions } from '@/Composables';
+import { usePermissions, useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     cashRegisters: Array,
@@ -13,6 +13,11 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseLimitUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el límite de cajas registradoras de mi cuenta en EzyVentas.'
+));
 
 // --- Lógica de Límites ---
 const limitReached = computed(() => {
@@ -107,9 +112,9 @@ const tagPt = {
                         <p class="text-xs text-orange-700 dark:text-orange-300/80 m-0 mt-0.5">Has alcanzado el límite de cajas registradoras de tu plan actual.</p>
                     </div>
                 </div>
-                <Link :href="route('subscription.manage')">
-                    <Button label="Mejorar plan" size="small" severity="warning" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
-                </Link>
+                <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
+                    <Button label="Solicitar aumento" icon="pi pi-whatsapp" size="small" severity="success" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                </a>
             </div>
 
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">

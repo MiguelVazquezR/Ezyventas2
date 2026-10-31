@@ -12,6 +12,9 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
     Route::get('/', [SubscriptionController::class, 'show'])->name('show');
     Route::put('/', [SubscriptionController::class, 'update'])->name('update');
     
+    // Activar o desactivar un módulo del plan actual.
+    Route::patch('/modules', [SubscriptionController::class, 'toggleModule'])->name('modules.toggle');
+
     // El endpoint para subir documentos
     Route::post('/documents', [SubscriptionController::class, 'storeDocument'])->name('document.store');
     

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Chart from 'primevue/chart';
 import Button from 'primevue/button';
@@ -19,6 +19,9 @@ const parseDate = (dateString) => dateString ? new Date(dateString + 'T00:00:00'
 const startDate = ref(parseDate(props.filters.start_date));
 const endDate = ref(parseDate(props.filters.end_date));
 const isLoading = ref(false);
+
+// Referral program flag shared by HandleInertiaRequests (config/subscription.php).
+const referralsEnabled = computed(() => usePage().props.referralsEnabled === true);
 
 const applyFilters = () => {
     isLoading.value = true;
@@ -275,8 +278,8 @@ const datePickerPt = {
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 truncate">Valor medio de las nuevas suscripciones</p>
                     </div>
 
-                    <!-- KPI 7: Descuentos por referidos -->
-                    <div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
+                    <!-- KPI 7: Descuentos por referidos (programa de referidos) -->
+                    <div v-if="referralsEnabled" class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
                         <div class="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                             <i class="pi pi-gift !text-6xl text-green-500"></i>
                         </div>
@@ -297,8 +300,8 @@ const datePickerPt = {
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 mt-1">Ingreso bruto vs neto del periodo</p>
                     </div>
 
-                    <!-- KPI 8: Premios por referidos -->
-                    <div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
+                    <!-- KPI 8: Premios a referidores (programa de referidos) -->
+                    <div v-if="referralsEnabled" class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
                         <div class="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                             <i class="pi pi-dollar !text-6xl text-amber-500"></i>
                         </div>

@@ -1,8 +1,9 @@
 <script setup>
-import { useForm, Link } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import { watch, computed } from 'vue';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
+import { useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     visible: Boolean,
@@ -22,6 +23,12 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible']);
+
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseBranchesUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el número de sucursales de mi cuenta en EzyVentas.'
+));
 
 const isEditMode = computed(() => !!props.branch);
 
@@ -69,39 +76,39 @@ const submit = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal :header="isEditMode ? 'Editar Sucursal' : 'Nueva Sucursal'" :style="{ width: '30rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal :header="isEditMode ? 'Editar sucursal' : 'Nueva sucursal'" :style="{ width: '30rem' }">
         <!-- AÑADIDO: Mensaje cuando se alcanza el límite -->
         <div v-if="limitReached && !isEditMode" class="p-4 text-center">
              <i class="pi pi-exclamation-triangle !text-5xl text-amber-500 mb-4"></i>
-             <h3 class="text-lg font-bold mb-2">Límite de Sucursales Alcanzado</h3>
+             <h3 class="text-lg font-bold mb-2">Límite de sucursales alcanzado</h3>
              <p class="text-gray-600 dark:text-gray-300 mb-6">
-                 Has alcanzado el límite de <strong>{{ limit }} sucursales</strong> permitido por tu plan actual.
+                 Tu plan actual permite hasta <strong>{{ limit }} sucursales</strong>. Solicita a soporte el aumento para registrar una nueva ubicación.
              </p>
-             <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer" class="w-full">
-                  <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" class="w-full" />
+             <a v-if="increaseBranchesUrl" :href="increaseBranchesUrl" target="_blank" rel="noopener noreferrer" class="w-full">
+                  <Button label="Solicitar aumento" icon="pi pi-whatsapp" severity="success" class="w-full" />
              </a>
         </div>
         
         <!-- Formulario original -->
         <form v-else @submit.prevent="submit" class="p-2 space-y-4">
             <div>
-                <InputLabel for="branch_name" value="Nombre de la Sucursal *" />
+                <InputLabel for="branch_name" value="Nombre de la sucursal *" />
                 <InputText id="branch_name" v-model="form.name" class="w-full mt-1" />
                 <InputError :message="form.errors.name" class="mt-1" />
             </div>
              <div>
-                <InputLabel for="branch_email" value="Email de Contacto *" />
+                <InputLabel for="branch_email" value="Email de contacto *" />
                 <InputText id="branch_email" v-model="form.contact_email" class="w-full mt-1" />
                 <InputError :message="form.errors.contact_email" class="mt-1" />
             </div>
              <div>
-                <InputLabel for="branch_phone" value="Teléfono de Contacto" />
+                <InputLabel for="branch_phone" value="Teléfono de contacto" />
                 <InputText id="branch_phone" v-model="form.contact_phone" class="w-full mt-1" />
                 <InputError :message="form.errors.contact_phone" class="mt-1" />
             </div>
             <div class="flex justify-end gap-2 mt-4">
                 <Button type="button" label="Cancelar" severity="secondary" @click="closeModal" text></Button>
-                <Button type="submit" :label="isEditMode ? 'Guardar Cambios' : 'Crear Sucursal'" :loading="form.processing"></Button>
+                <Button type="submit" :label="isEditMode ? 'Guardar cambios' : 'Crear sucursal'" :loading="form.processing"></Button>
             </div>
         </form>
     </Dialog>

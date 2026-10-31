@@ -9,7 +9,7 @@
 
 ¡Tu cuenta para **{{ $user->branch->subscription->business_name }}** ha sido creada con éxito!
 
-Estamos emocionados de ayudarte a gestionar y hacer crecer tu negocio. Hemos activado un plan de prueba de 30 días con acceso a todas las funciones iniciales.
+Estamos emocionados de ayudarte a gestionar y hacer crecer tu negocio. Tu cuenta ya incluye el plan esencial con acceso a todas las funciones iniciales.
 
 Para comenzar, simplemente haz clic en el botón de abajo e inicia sesión con el correo y la contraseña que registraste.
 

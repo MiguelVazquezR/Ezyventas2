@@ -33,6 +33,8 @@ class Subscription extends Model implements HasMedia
         'address',
         'slug',
         'onboarding_completed_at',
+        'inactivity_warned_at',
+        'data_purged_at',
         'referrer_discount_active',
         // LEGACY: la facturación se deriva del módulo module_billing (billingEnabled()).
         // Columna conservada por compatibilidad; ya no se usa como gate.
@@ -42,6 +44,8 @@ class Subscription extends Model implements HasMedia
     protected $casts = [
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
+        'inactivity_warned_at' => 'datetime',
+        'data_purged_at' => 'datetime',
         'referrer_discount_active' => 'boolean',
         'facturacion_habilitada' => 'boolean', // LEGACY — ya no se usa como gate (ver billingEnabled())
         'status' => SubscriptionStatus::class,
@@ -142,7 +146,7 @@ class Subscription extends Model implements HasMedia
     {
         $currentVersion = $this->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
-        $limitProducts = $limitItem ? $limitItem->quantity : 50;
+        $limitProducts = $limitItem ? $limitItem->quantity : config('subscription.limits.limit_products');
 
         if ($limitProducts === -1) return false;
 
@@ -156,7 +160,7 @@ class Subscription extends Model implements HasMedia
     {
         $currentVersion = $this->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
-        $limitServices = $limitItem ? $limitItem->quantity : 100;
+        $limitServices = $limitItem ? $limitItem->quantity : config('subscription.limits.limit_services');
 
         if ($limitServices === -1) {
             return false; // -1 significa ilimitado
@@ -171,7 +175,10 @@ class Subscription extends Model implements HasMedia
     public function getUserLimitData(): array
     {
         $currentVersion = $this->versions()->latest('start_date')->first();
-        $limit = -1; // -1 significa ilimitado
+
+        // The free plan always ships a limit_users item; the config value is the
+        // fallback when a version was created before that item existed.
+        $limit = config('subscription.limits.limit_users');
         
         if ($currentVersion) {
             $limitItem = $currentVersion->items()->where('item_key', 'limit_users')->first();

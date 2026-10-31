@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Route;
 | makes it available throughout the request lifecycle.
 */
 
-Route::middleware(['web', 'resolve.store'])->prefix('store/{slug}')->name('store.')->group(function () {
+Route::middleware(['web', 'resolve.store', 'track.visit'])->prefix('store/{slug}')->name('store.')->group(function () {
 
     // Catalog / Home
     Route::get('/', [PublicStoreController::class, 'index'])->name('home');

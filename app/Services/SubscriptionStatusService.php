@@ -201,14 +201,17 @@ class SubscriptionStatusService
     private function renewalData(Subscription $subscription, array $breakdown): array
     {
         $subtotal = $breakdown['subtotal'];
+        $referralsEnabled = (bool) config('subscription.referrals.enabled');
 
         // The ongoing referrer discount only applies to monthly billing
         // (mirrors ProcessSubscriptionPaymentAction::calculateDiscounts()).
-        $referrerDiscountPct = $breakdown['billing_period'] === BillingPeriod::MONTHLY
+        $referrerDiscountPct = $referralsEnabled && $breakdown['billing_period'] === BillingPeriod::MONTHLY
             ? round($subscription->getReferrerActiveDiscountPct(), 2)
             : 0.0;
 
-        $pendingReferral = $subscription->pendingRegistrationReferral();
+        // With the referral program switched off (config/subscription.php) the
+        // estimate is never discounted, so the checkout shows the full price.
+        $pendingReferral = $referralsEnabled ? $subscription->pendingRegistrationReferral() : null;
         $referralCodeDiscountPct = round((float) ($pendingReferral?->referred_discount_pct ?? 0), 2);
 
         $discountAmount = round($subtotal * (($referrerDiscountPct + $referralCodeDiscountPct) / 100), 2);

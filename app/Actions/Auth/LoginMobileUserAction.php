@@ -5,6 +5,7 @@ namespace App\Actions\Auth;
 use App\Models\User;
 use App\Services\Auth\SubscriptionAccessGuard;
 use App\Services\Auth\UserAccessContextService;
+use App\Services\Lifecycle\AccountLifecycleService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -20,6 +21,7 @@ class LoginMobileUserAction
     public function __construct(
         private readonly UserAccessContextService $accessContext,
         private readonly SubscriptionAccessGuard $accessGuard,
+        private readonly AccountLifecycleService $lifecycleService,
     ) {}
 
     /**
@@ -40,6 +42,9 @@ class LoginMobileUserAction
         }
 
         $this->accessGuard->ensureUserCanOperate($user);
+
+        // Token logins do not fire the framework Login event.
+        $this->lifecycleService->markUserActivity($user);
 
         $token = $user->createToken($deviceName, ['mobile'])->plainTextToken;
 

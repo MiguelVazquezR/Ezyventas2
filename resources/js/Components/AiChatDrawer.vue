@@ -3,6 +3,7 @@ import { computed, ref, nextTick, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import { useAiChat } from '@/composables/useAiChat';
+import { useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     /** Control the drawer visibility from parent. */
@@ -36,6 +37,8 @@ const loadingUsage = ref(false);
 const showHistory = ref(false);
 
 const userName = page.props.auth?.user?.name ?? '';
+
+const { supportWhatsAppUrl } = useSupportWhatsApp();
 
 async function toggleUsage(event) {
     // Open panel immediately so PrimeVue can anchor it to the button
@@ -91,8 +94,8 @@ function onKeydown(e) {
     }
 }
 
-function goToManageSubscription() {
-    router.visit(route('subscription.manage'));
+function goToAccount() {
+    router.visit(route('subscription.show'));
 }
 
 function toggleWriteMode() {
@@ -179,7 +182,17 @@ function onMessagesClick(e) {
 
     if (url.origin === window.location.origin && !isDownload) {
         e.preventDefault();
-        router.visit(url.pathname + url.search); // SPA navigation, no full reload
+        router.visit(url.pathname + url.search + url.hash, {
+            // Guide links end with #guide-{id}. When the target page is already
+            // mounted (same module), the page's onMounted hook does not run again.
+            onSuccess: () => {
+                if (!url.hash) return;
+
+                window.setTimeout(() => {
+                    document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 200);
+            },
+        }); // SPA navigation, no full reload
     }
     // else: same-origin download or external link — let the browser handle it normally
 }
@@ -476,13 +489,13 @@ const drawerStyle = computed(() => {
                                 Módulo no disponible
                             </p>
                             <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
-                                El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde la gestión de suscripción.
+                                El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde Mi cuenta.
                             </p>
                             <Button
-                                label="Gestionar suscripción"
+                                label="Ir a Mi cuenta"
                                 size="small"
                                 class="!rounded-xl !text-xs !font-bold"
-                                @click="goToManageSubscription"
+                                @click="goToAccount"
                             />
                         </div>
                     </div>
@@ -502,7 +515,8 @@ const drawerStyle = computed(() => {
                                 Tu suscripción alcanzó el límite de uso mensual del asistente. Si necesitas aumentar el límite, contacta a soporte.
                             </p>
                             <a
-                                href="https://wa.me/5213321705650"
+                                v-if="supportWhatsAppUrl"
+                                :href="supportWhatsAppUrl"
                                 target="_blank"
                                 rel="noopener"
                                 class="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-green-600 dark:text-green-400 hover:underline"

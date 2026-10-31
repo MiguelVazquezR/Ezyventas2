@@ -8,23 +8,16 @@ const props = defineProps({
     saving: Boolean,
     availableModules: Array,
     availableLimits: Array,
+    planLimits: Object,
 });
 
 const emit = defineEmits(['finish', 'go-back']);
 
 // --- Local UI state ---
 const includedPanel = ref(null); // null = "Incluido en tu plan esencial" collapsed
-const advancedPanel = ref(null); // null = "Ajustes avanzados" collapsed
+const advancedPanel = ref(null); // null = "Límites incluidos" collapsed
 
 // --- Tesla UI PT ---
-const inputNumberPt = {
-    input: {
-        root: {
-            class: 'w-full !rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2.5 !text-sm !text-gray-900 dark:!text-white text-right',
-        },
-    },
-};
-
 const accordionPt = {
     panel: { class: 'border border-dashed border-gray-200 dark:border-[#3a3a3a] rounded-2xl bg-transparent overflow-hidden' },
     headerAction: { class: '!p-4 hover:bg-gray-50 dark:hover:bg-[#2a2a2a] transition-colors flex items-center justify-between gap-3 w-full outline-none focus:ring-0 bg-transparent' },
@@ -143,6 +136,13 @@ const getLimitItem = (key) => {
     return props.availableLimits?.find(l => l.key === key) || null;
 };
 
+// Fixed quantities come from config/subscription.php through the controller:
+// the wizard only displays them, they cannot be edited here.
+const limitValue = (key) => {
+    const value = props.planLimits?.[key];
+    return typeof value === 'number' ? value.toLocaleString('es-MX') : '—';
+};
+
 // --- Limit rows shown inside "Ajustes avanzados" ---
 const limitRows = computed(() => {
     const rows = [
@@ -165,7 +165,7 @@ const limitRows = computed(() => {
 
         <!-- Intro -->
         <p class="text-[11px] text-gray-500 dark:text-gray-400 m-0">
-            Tu plan esencial ya está activo. Puedes probar cualquier módulo adicional sin compromiso durante tus 30 días de prueba.
+            Tu plan gratuito ya está activo, no tiene fecha de vencimiento y no requiere renovaciones. Puedes activar cualquier módulo adicional cuando lo necesites.
         </p>
 
         <!-- Plan esencial (incluido) — colapsable -->
@@ -268,9 +268,9 @@ const limitRows = computed(() => {
                     <div class="flex items-center gap-3 flex-1 min-w-0 text-left">
                         <i class="pi pi-sliders-h text-gray-400 !text-sm flex-shrink-0"></i>
                         <div class="flex flex-col min-w-0">
-                            <span class="text-sm font-medium text-gray-900 dark:text-gray-100">Ajustes avanzados</span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-gray-100">Límites incluidos en tu plan</span>
                             <span class="text-[10px] text-gray-500 dark:text-gray-400">
-                                Límites de recursos — los valores predeterminados funcionan bien para empezar
+                                Cantidades fijas del plan gratuito — puedes aumentarlas adquiriendo módulos adicionales
                             </span>
                         </div>
                     </div>
@@ -291,9 +291,9 @@ const limitRows = computed(() => {
                                     </p>
                                 </div>
                             </div>
-                            <div>
-                                <InputNumber v-model="form.limits[row.key]" :min="1" locale="es-MX" fluid :pt="inputNumberPt" />
-                                <InputError :message="form.errors[`limits.${row.key}`]" class="mt-1" />
+                            <div class="flex items-center justify-between rounded-xl bg-white dark:bg-[#232323] border border-gray-200 dark:border-[#3a3a3a] px-3.5 py-2.5">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Incluidas</span>
+                                <span class="text-base font-light text-gray-900 dark:text-white">{{ limitValue(row.key) }}</span>
                             </div>
                         </div>
 

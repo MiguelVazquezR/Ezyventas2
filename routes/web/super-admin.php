@@ -5,9 +5,11 @@ use App\Http\Controllers\Admin\AdminStampPurchaseController;
 use App\Http\Controllers\Admin\AdminStampPricingController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
 use App\Http\Controllers\Admin\AdminTutorialController;
+use App\Http\Controllers\Admin\AdminVisitController;
 use App\Http\Controllers\Admin\AiAgentSettingsController;
 use App\Http\Controllers\Admin\AdminPacAccountController;
 use App\Http\Controllers\Admin\AdminStampReservationController;
+use App\Http\Controllers\Admin\AdminHelpArticleController;
 use App\Http\Controllers\Admin\PlanItemController;
 use App\Http\Controllers\Admin\SubscriptionController;
 use App\Http\Controllers\Admin\ReportController;
@@ -20,6 +22,9 @@ use Illuminate\Support\Facades\Route;
 // (el que da acceso a tu Usuario ID 1)
 Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admin.')->group(function () {
     
+    // --- Visitas del sitio público ---
+    Route::get('visits', [AdminVisitController::class, 'index'])->name('visits.index');
+
     // --- Reportes / Dashboard Super Admin ---
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
 
@@ -110,6 +115,16 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     // --- Asistente IA (Configuración global) ---
     Route::get('/ai-agent', [AiAgentSettingsController::class, 'index'])->name('ai-agent.index');
     Route::put('/ai-agent', [AiAgentSettingsController::class, 'update'])->name('ai-agent.update');
+
+    // --- Centro de ayuda (guías escritas por módulo) ---
+    Route::prefix('help-articles')->name('help-articles.')->group(function () {
+        Route::get('/', [AdminHelpArticleController::class, 'index'])->name('index');
+        Route::post('/', [AdminHelpArticleController::class, 'store'])->name('store');
+        Route::put('/{helpArticle}', [AdminHelpArticleController::class, 'update'])->name('update');
+        Route::delete('/{helpArticle}', [AdminHelpArticleController::class, 'destroy'])->name('destroy');
+        Route::post('/{helpArticle}/toggle-publish', [AdminHelpArticleController::class, 'togglePublish'])->name('toggle-publish');
+        Route::post('/{helpArticle}/move', [AdminHelpArticleController::class, 'move'])->name('move');
+    });
 
     // --- Tutoriales (videos por módulo y sección) ---
     Route::prefix('tutorials')->name('tutorials.')->group(function () {

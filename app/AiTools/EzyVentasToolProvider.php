@@ -8,6 +8,7 @@ use App\AiTools\Registrars\CustomerTools;
 use App\AiTools\Registrars\DashboardTools;
 use App\AiTools\Registrars\ExpenseTools;
 use App\AiTools\Registrars\ExportTools;
+use App\AiTools\Registrars\HelpCenterTools;
 use App\AiTools\Registrars\NavigationTools;
 use App\AiTools\Registrars\ProductTools;
 use App\AiTools\Registrars\PromotionTools;
@@ -88,6 +89,7 @@ class EzyVentasToolProvider implements AiToolProvider
             new StaffPerformanceTools(),
             new DashboardTools(),
             new NavigationTools(),
+            new HelpCenterTools(),
             new ExportTools(),
             new SuggestionTools(),
             new BusinessHealthTools(),

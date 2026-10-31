@@ -63,6 +63,10 @@ const getPaymentMethodDetails = (method) => {
             name: 'Saldo a favor', icon: 'pi pi-wallet', color: 'bg-purple-500', textColor: 'text-purple-500',
             cardClass: 'bg-purple-50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-900/30'
         },
+        intercambio: {
+            name: 'Intercambio', icon: 'pi pi-refresh', color: 'bg-gray-500', textColor: 'text-gray-500',
+            cardClass: 'bg-gray-50 dark:bg-[#1a1a1a] border-gray-100 dark:border-[#3a3a3a]'
+        },
         default: {
             name: method || 'Otro', icon: 'pi pi-question-circle', color: 'bg-gray-500', textColor: 'text-gray-500',
             cardClass: 'bg-gray-50 dark:bg-[#1a1a1a] border-gray-100 dark:border-[#3a3a3a]'
@@ -131,10 +135,15 @@ const getChannelDetails = (channel) => {
 
 const getTransactionStatusTagSeverity = (status) => {
     switch (status) {
-        case 'completada': return 'success';
+        case 'completado': return 'success';
         case 'pendiente': return 'warn';
-        case 'cancelada': return 'danger';
-        case 'reembolsada': return 'info';
+        case 'cancelado': return 'danger';
+        case 'reembolsado': return 'info';
+        case 'cambiado': return 'secondary';
+        case 'apartado': return 'info';
+        case 'por_entregar': return 'warn';
+        case 'en_ruta': return 'info';
+        case 'entregado_por_pagar': return 'warn';
         default: return 'secondary';
     }
 };
@@ -175,6 +184,9 @@ const tagPt = {
 <template>
     <!-- MODAL: Detalle de Ventas -->
     <Dialog v-model:visible="isSalesVisible" header="Detalle de ventas del periodo" modal class="w-full max-w-5xl mx-4" :pt="dialogPt">
+        <Message v-if="detailedTransactions.length >= 1000" severity="secondary" variant="simple" size="small" class="mb-4">
+            Mostrando hasta 1,000 ventas. Exporta el reporte para consultar el detalle completo del periodo.
+        </Message>
         <DataTable :value="detailedTransactions" paginator :rows="15" sortMode="multiple"
             :multiSortMeta="[{ field: 'created_at', order: -1 }]" responsiveLayout="scroll" :pt="dataTablePt">
             <Column field="folio" header="Folio" sortable>
@@ -212,6 +224,9 @@ const tagPt = {
 
     <!-- MODAL: Detalle de Pagos -->
     <Dialog v-model:visible="isPaymentsVisible" header="Detalle de pagos recibidos" modal class="w-full max-w-5xl mx-4" :pt="dialogPt">
+        <Message severity="info" variant="simple" size="small" class="mb-4">
+            Los totales por método incluyen todos los pagos completados del periodo, incluso saldo a favor e intercambio. No incluye pagos de ventas canceladas, reembolsadas o cambiadas. La tabla muestra hasta 1,000 movimientos.
+        </Message>
         <!-- Indicadores: total por método de pago -->
         <div v-if="paymentMethodTotals.length > 0" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
             <div v-for="item in paymentMethodTotals" :key="item.method"
@@ -301,6 +316,9 @@ const tagPt = {
             </div>
         </div>
 
+        <Message v-if="detailedExpenses.length >= 1000" severity="secondary" variant="simple" size="small" class="mb-4">
+            Mostrando hasta 1,000 gastos. Los totales superiores se calculan sobre todos los gastos del periodo; exporta el reporte para el detalle completo.
+        </Message>
         <DataTable :value="detailedExpenses" paginator :rows="10" sortMode="multiple"
             :multiSortMeta="[{ field: 'expense_date', order: -1 }]" responsiveLayout="scroll" :pt="dataTablePt">
             <Column field="folio" header="Folio" sortable>
@@ -357,10 +375,10 @@ const tagPt = {
                 <AccordionHeader>Ganancia neta</AccordionHeader>
                 <AccordionContent>
                     <div class="space-y-4 text-sm leading-relaxed">
-                        <p class="m-0 dark:text-gray-300"> Mide la <span class="font-bold text-gray-900 dark:text-white">rentabilidad</span> de tu negocio después de restar todos los gastos de tus ventas totales. </p>
+                        <p class="m-0 dark:text-gray-300"> Mide la <span class="font-bold text-gray-900 dark:text-white">rentabilidad</span> de tu negocio después de restar a tus ventas totales los gastos pagados con dinero del negocio. </p>
                         <div class="bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-4 text-center">
                             <p class="font-mono text-sm tracking-tight text-teal-600 dark:text-teal-400 m-0">
-                                (Ventas totales) - (Total de gastos)
+                                (Ventas totales) - (Gastos del negocio)
                             </p>
                         </div>
                         <div>
@@ -369,6 +387,7 @@ const tagPt = {
                             <ul class="list-disc pl-5 m-0 space-y-1 dark:text-gray-400">
                                 <li> Te dice si tus precios de venta son suficientes para cubrir tus costos operativos y aún dejar un margen de ganancia. </li>
                                 <li> <span class="font-bold text-gray-900 dark:text-white">Importante:</span> Se basa en las <span class="text-[10px] font-bold uppercase tracking-widest text-purple-500">Ventas</span>, no en los pagos. Una venta a crédito cuenta aquí, aunque no hayas recibido el dinero. </li>
+                                <li> La línea <span class="font-bold text-gray-900 dark:text-white">total</span> resta también los gastos pagados con dinero externo. Úsala para conocer la rentabilidad completa del propietario. </li>
                             </ul>
                         </div>
                     </div>
@@ -379,15 +398,16 @@ const tagPt = {
                 <AccordionHeader>% Margen de utilidad</AccordionHeader>
                 <AccordionContent>
                     <div class="space-y-4 text-sm leading-relaxed">
-                        <p class="m-0 dark:text-gray-300"> Indica qué porcentaje de tus ventas se convierte en ganancia real. </p>
+                        <p class="m-0 dark:text-gray-300"> Indica qué porcentaje de tus ventas se convierte en ganancia del negocio. </p>
                         <div class="bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-4 text-center">
                             <p class="font-mono text-sm tracking-tight text-orange-600 dark:text-orange-400 m-0">
-                                (Ganancia neta / Ventas totales) * 100
+                                (Ganancia del negocio / Ventas totales) * 100
                             </p>
                         </div>
                         <div>
                             <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Ejemplo</p>
-                            <p class="m-0"> Si vendes $1,000 y gastas $800, tu ganancia es $200. Tu margen es del <span class="font-bold text-gray-900 dark:text-white">20%</span>. Significa que de cada $1 peso que vendes, te quedas con 20 centavos de ganancia. </p>
+                            <p class="m-0 mb-2"> Si vendes $1,000 y gastas $800 con dinero del negocio, tu ganancia es $200. Tu margen es del <span class="font-bold text-gray-900 dark:text-white">20%</span>. Significa que de cada peso que vendes, te quedas con 20 centavos de ganancia. </p>
+                            <p class="m-0"> Si además pagaste $100 con dinero externo, la ganancia total es $100 y el margen total es del <span class="font-bold text-gray-900 dark:text-white">10%</span>. La tarjeta muestra el margen del negocio como número principal y el margen total debajo. </p>
                         </div>
                     </div>
                 </AccordionContent>
@@ -397,10 +417,10 @@ const tagPt = {
                 <AccordionHeader>Flujo de dinero neto</AccordionHeader>
                 <AccordionContent>
                     <div class="space-y-4 text-sm leading-relaxed">
-                        <p class="m-0 dark:text-gray-300"> Mide la <span class="font-bold text-gray-900 dark:text-white">liquidez</span> real de tu negocio. Es la cantidad de dinero que entró y salió. </p>
+                        <p class="m-0 dark:text-gray-300"> Mide la <span class="font-bold text-gray-900 dark:text-white">liquidez</span> del negocio: el dinero que entró por pagos menos el dinero que salió por gastos del negocio. </p>
                         <div class="bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-4 text-center">
                             <p class="font-mono text-sm tracking-tight text-green-600 dark:text-green-400 m-0">
-                                (Total de pagos recibidos) - (Total de gastos pagados)
+                                (Total de pagos recibidos) - (Gastos del negocio)
                             </p>
                         </div>
                         <div>
@@ -409,6 +429,8 @@ const tagPt = {
                             <ul class="list-disc pl-5 m-0 space-y-1 dark:text-gray-400">
                                 <li> Un negocio puede ser "rentable" (Ganancia neta positiva) pero quebrar por falta de liquidez (Flujo de dinero negativo) si los clientes no pagan a tiempo. </li>
                                 <li> Este indicador es vital para la operación diaria. Te aseguras de tener efectivo en tus cuentas bancarias. </li>
+                                <li> La línea <span class="font-bold text-gray-900 dark:text-white">total</span> resta también los gastos pagados con dinero externo. </li>
+                                <li> El total de pagos incluye pagos con saldo a favor e intercambio. No representan dinero nuevo, pero sí liquidan ventas del periodo. </li>
                             </ul>
                         </div>
                     </div>
@@ -433,6 +455,36 @@ const tagPt = {
                                 <li> Te ayuda a entender el poder adquisitivo de tus clientes y a probar el impacto de nuevas estrategias de precios o promociones. </li>
                             </ul>
                         </div>
+                    </div>
+                </AccordionContent>
+            </AccordionPanel>
+
+            <AccordionPanel value="4">
+                <AccordionHeader>Ventas, pagos y gastos</AccordionHeader>
+                <AccordionContent>
+                    <div class="space-y-4 text-sm leading-relaxed">
+                        <ul class="list-disc pl-5 m-0 space-y-2 dark:text-gray-400">
+                            <li><span class="font-bold text-gray-900 dark:text-white">Ventas totales:</span> ventas válidas del periodo. No incluyen ventas canceladas, reembolsadas ni cambiadas.</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Total de pagos:</span> pagos completados de ventas válidas. Incluye saldo a favor e intercambio, aunque no representen dinero nuevo.</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Total de gastos:</span> gastos pagados con dinero del negocio (caja o cuentas bancarias).</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Gastos externos:</span> gastos pagados con dinero personal. Se muestran aparte y no afectan el flujo del negocio.</li>
+                        </ul>
+                    </div>
+                </AccordionContent>
+            </AccordionPanel>
+
+            <AccordionPanel value="5">
+                <AccordionHeader>Comparación de periodos</AccordionHeader>
+                <AccordionContent>
+                    <div class="space-y-4 text-sm leading-relaxed">
+                        <p class="m-0 dark:text-gray-300">Cada tarjeta compara el periodo seleccionado con un periodo anterior equivalente:</p>
+                        <ul class="list-disc pl-5 m-0 space-y-1 dark:text-gray-400">
+                            <li><span class="font-bold text-gray-900 dark:text-white">Día:</span> contra el día anterior.</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Semana:</span> contra la semana anterior.</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Mes:</span> contra el mes anterior.</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Año:</span> contra el año anterior.</li>
+                            <li><span class="font-bold text-gray-900 dark:text-white">Personalizado:</span> contra un periodo de la misma duración inmediatamente anterior.</li>
+                        </ul>
                     </div>
                 </AccordionContent>
             </AccordionPanel>

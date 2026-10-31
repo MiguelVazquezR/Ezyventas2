@@ -125,7 +125,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
             'userBankAccounts' => $userBankAccounts,
-            'hasOnlineStore' => in_array('Tienda en lÃ­nea', $user->branch->subscription->getAvailableModuleNames()),
+            'hasOnlineStore' => in_array('module_online_store', $user->branch?->subscription?->getActiveModuleKeys() ?? [], true),
         ];
 
         $agent = new Agent();
@@ -181,7 +181,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'type' => 'transaction',
                 'id' => $transaction->id,
                 'label' => "Venta Folio: {$transaction->folio}",
-                'message' => "Â¿Deseas ver los detalles de la venta {$transaction->folio}?"
+                'message' => "¿Deseas ver los detalles de la venta {$transaction->folio}?"
             ]);
         }
 
@@ -195,7 +195,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'type' => 'service_order',
                 'id' => $serviceOrder->id,
                 'label' => "Orden de Servicio: {$serviceOrder->folio}",
-                'message' => "Â¿Ir a detalles de la Orden de Servicio {$serviceOrder->folio}?"
+                'message' => "¿Ir a detalles de la Orden de Servicio {$serviceOrder->folio}?"
             ]);
         }
 
@@ -212,7 +212,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'type' => 'customer',
                 'id' => $customer->id,
                 'label' => "Cliente: {$customer->name}",
-                'message' => "Se encontrÃ³ al cliente {$customer->name}. Â¿Ir a detalles?"
+                'message' => "Se encontró al cliente {$customer->name}. ¿Ir a detalles?"
             ]);
         }
 
@@ -258,7 +258,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             );
 
             return redirect()->route('pos.index')
-                ->with('success', 'Venta registrada con Ã©xito. Folio: ' . $transaction->folio)
+                ->with('success', 'Venta registrada con Éxito. Folio: ' . $transaction->folio)
                 ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
@@ -293,7 +293,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $user = Auth::user();
         // Nota: Para un apartado lo ideal es tener un customer registrado, 
-        // pero lo dejamos igual por compatibilidad de cÃ³digo.
+        // pero lo dejamos igual por compatibilidad de código.
         $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
 
         try {
@@ -306,7 +306,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             );
 
             return redirect()->route('pos.index')
-                ->with('success', 'Apartado registrado con Ã©xito. Folio: ' . $transaction->folio)
+                ->with('success', 'Apartado registrado con Éxito. Folio: ' . $transaction->folio)
                 ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar el apartado: ' . $e->getMessage());
@@ -349,7 +349,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
     private function getDefaultCustomerData()
     {
-        return ['id' => null, 'name' => 'PÃºblico en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
+        return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
 
     /**
@@ -477,7 +477,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     $branch->id,
                     $orderItem->quantity,
                     null,
-                    "ReposiciÃ³n por cancelaciÃ³n de pedido en lÃ­nea #{$order->formatted_order_number}"
+                    "Reposición por cancelación de pedido en línea #{$order->formatted_order_number}"
                 );
             }
         }
