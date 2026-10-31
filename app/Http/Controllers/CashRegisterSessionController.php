@@ -3,20 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
-use App\Events\SessionClosed;
 use App\Http\Requests\StoreCashRegisterSessionRequest;
 use App\Http\Requests\UpdateCashRegisterSessionRequest;
 use App\Http\Requests\CashRegisterSessions\UpdateClosingCashBalanceRequest;
-use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\User;
+use App\Services\CashRegisters\CashRegisterSessionLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -123,7 +120,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function store(StoreCashRegisterSessionRequest $request)
+    public function store(StoreCashRegisterSessionRequest $request, CashRegisterSessionLifecycleService $lifecycle)
     {
         $validated = $request->validated();
         $user = Auth::user();
@@ -133,98 +130,43 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             return redirect()->back()->with(['warning' => 'Parece que otro usuario abrió caja antes que tu, puedes unirte a la sesión.']);
         }
 
-        DB::transaction(function () use ($request, $validated, $cashRegister, $user) {
-            // 1. Aplicar PRIMERO los saldos confirmados por el cajero en el modal.
-            //    Así el snapshot (opening_bank_balances) coincide con lo declarado
-            //    al abrir la caja y no con el valor anterior a la corrección.
-            $declaredAccountIds = [];
-            $declaredAccounts = $request->input('bank_accounts', []);
-
-            foreach ($declaredAccounts as $accountData) {
-                $bankAccount = BankAccount::find($accountData['id'] ?? null);
-                if ($bankAccount) {
-                    $declaredAccountIds[] = $bankAccount->id;
-                    $bankAccount->update(['balance' => (float) $accountData['balance']]);
-                }
-            }
-
-            // 2. Para las cuentas de la sucursal que el cajero NO declaró en el modal
-            //    (por ejemplo, cuentas que no tiene permitido gestionar), heredar el
-            //    saldo del último corte cerrado de esta caja. Así la sesión arranca
-            //    con el cierre anterior y no con un balance crudo sin conciliar.
-            $lastClosedSession = $cashRegister->sessions()
-                ->where('status', CashRegisterSessionStatus::CLOSED)
-                ->latest('closed_at')
-                ->first();
-
-            $previousBankBalances = collect($lastClosedSession?->closing_bank_balances ?? [])->keyBy('id');
-
-            // 3. Construir el snapshot de saldos.
-            $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
-                $query->where('branch_id', $cashRegister->branch_id);
-            })->get();
-
-            $openingBankBalances = $allBranchAccounts->map(function ($account) use ($previousBankBalances, $declaredAccountIds) {
-                $previous = $previousBankBalances->get($account->id);
-
-                return [
-                    'id' => $account->id,
-                    'account_name' => $account->account_name,
-                    'bank_name' => $account->bank_name,
-                    'balance' => in_array($account->id, $declaredAccountIds)
-                        ? (float) $account->balance
-                        : (float) ($previous['balance'] ?? $account->balance),
-                ];
-            })->values()->all();
-
-            $session = $cashRegister->sessions()->create([
-                'user_id' => $user->id,
-                'opening_cash_balance' => $validated['opening_cash_balance'],
-                'opening_bank_balances' => $openingBankBalances,
-                'status' => CashRegisterSessionStatus::OPEN,
-                'opened_at' => now(),
-            ]);
-
-            $session->users()->attach($user->id);
-            $cashRegister->update(['in_use' => true]);
-        });
+        $lifecycle->open(
+            $cashRegister,
+            $user,
+            (float) $validated['opening_cash_balance'],
+            $request->input('bank_accounts', [])
+        );
 
         return redirect()->back()->with('success', 'La caja ha sido abierta con éxito.');
     }
 
-    public function join(Request $request, CashRegisterSession $session)
+    public function join(Request $request, CashRegisterSession $session, CashRegisterSessionLifecycleService $lifecycle)
     {
-        $user = Auth::user();
+        $lifecycle->join($session, Auth::user());
 
-        $session->users()->syncWithoutDetaching([$user->id]);
         return redirect()->back()->with('success', 'Te has unido a la sesión de caja.');
     }
 
-    public function leave(Request $request, CashRegisterSession $session)
+    public function leave(Request $request, CashRegisterSession $session, CashRegisterSessionLifecycleService $lifecycle)
     {
-        $user = Auth::user();
-        $session->users()->detach($user->id);
+        $lifecycle->leave($session, Auth::user());
+
         return redirect()->back()->with('success', 'Has salido de la sesión de caja.');
     }
 
-    public function update(UpdateCashRegisterSessionRequest $request, CashRegisterSession $cashRegisterSession)
-    {
-        DB::transaction(function () use ($request, $cashRegisterSession) {
-            $validated = $request->validated();
+    public function update(
+        UpdateCashRegisterSessionRequest $request,
+        CashRegisterSession $cashRegisterSession,
+        CashRegisterSessionLifecycleService $lifecycle,
+    ) {
+        $validated = $request->validated();
 
-            // Delegamos el proceso matemático al Modelo
-            $cashRegisterSession->closeSession(
-                (float) $validated['closing_cash_balance'], 
-                $validated['notes'] ?? null
-            );
-
-            $closingUser = Auth::user();
-
-            DB::afterCommit(function () use ($cashRegisterSession, $closingUser) {
-                Log::info('Broadcasting SessionClosed event for session ID: ' . $cashRegisterSession->id);
-                broadcast(new SessionClosed($cashRegisterSession, $closingUser))->toOthers();
-            });
-        });
+        $lifecycle->close(
+            $cashRegisterSession,
+            (float) $validated['closing_cash_balance'],
+            $validated['notes'] ?? null,
+            Auth::user()
+        );
 
         return redirect()->back()->with('success', 'Corte de caja realizado con éxito.');
     }
@@ -238,7 +180,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', 'El monto de contado físico ha sido actualizado.');
     }
 
-    public function rejoinOrStart(Request $request)
+    public function rejoinOrStart(Request $request, CashRegisterSessionLifecycleService $lifecycle)
     {
         $request->validate([
             'cash_register_id' => 'required|integer|exists:cash_registers,id',
@@ -246,65 +188,19 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         ]);
 
         $user = Auth::user();
-        $cashRegisterId = $request->input('cash_register_id');
-        $originalOpenerId = $request->input('original_opener_id');
 
         if ($user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN->value)->exists()) {
             return redirect()->back()->with('error', 'Ya tienes una sesión activa.');
         }
 
-        $cashRegister = CashRegister::findOrFail($cashRegisterId);
-        $existingSession = $cashRegister->sessions()
-            ->where('status', CashRegisterSessionStatus::OPEN)
-            ->first();
+        $cashRegister = CashRegister::findOrFail($request->input('cash_register_id'));
+        $opener = User::findOrFail($request->input('original_opener_id'));
 
-        if ($existingSession) {
-            $existingSession->users()->syncWithoutDetaching([$user->id]);
-            return redirect()->back()->with('success', 'Te has unido a la nueva sesión.');
-        }
+        $wasAlreadyOpen = (bool) $lifecycle->openSessionOn($cashRegister);
+        $lifecycle->rejoinOrStart($cashRegister, $user, $opener);
 
-        $opener = User::findOrFail($originalOpenerId);
-
-        // Heredar los saldos del último corte cerrado de esta caja: así la nueva
-        // sesión arranca con el cierre anterior y no con valores sin conciliar.
-        $lastClosedSession = $cashRegister->sessions()
-            ->where('status', CashRegisterSessionStatus::CLOSED)
-            ->latest('closed_at')
-            ->first();
-
-        $openingCashBalance = $lastClosedSession?->closing_cash_balance ?? 0.00;
-        $previousBankBalances = collect($lastClosedSession?->closing_bank_balances ?? [])->keyBy('id');
-
-        $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
-            $query->where('branch_id', $cashRegister->branch_id);
-        })->get();
-
-        $openingBankBalances = $allBranchAccounts->map(function ($account) use ($previousBankBalances) {
-            $previous = $previousBankBalances->get($account->id);
-
-            return [
-                'id' => $account->id,
-                'account_name' => $account->account_name,
-                'bank_name' => $account->bank_name,
-                'balance' => (float) ($previous['balance'] ?? $account->balance),
-            ];
-        })->values()->all();
-
-        $session = DB::transaction(function () use ($cashRegister, $opener, $user, $openingCashBalance, $openingBankBalances) {
-            $newSession = $cashRegister->sessions()->create([
-                'user_id' => $opener->id,
-                'opening_cash_balance' => $openingCashBalance,
-                'opening_bank_balances' => $openingBankBalances,
-                'status' => CashRegisterSessionStatus::OPEN,
-                'opened_at' => now(),
-            ]);
-
-            $newSession->users()->attach(array_unique([$opener->id, $user->id]));
-            $cashRegister->update(['in_use' => true]);
-
-            return $newSession;
-        });
-
-        return redirect()->back()->with('success', 'Se ha creado una nueva sesión y te has unido.');
+        return redirect()->back()->with('success', $wasAlreadyOpen
+            ? 'Te has unido a la nueva sesión.'
+            : 'Se ha creado una nueva sesión y te has unido.');
     }
 }

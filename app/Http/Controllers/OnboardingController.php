@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
 use App\Mail\WelcomeEmail;
 use App\Models\Branch;
 use App\Models\PlanItem;
-use App\Models\Subscription;
 use App\Models\User;
+use App\Services\Subscription\SubscriptionPlanService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +17,11 @@ use Inertia\Inertia;
 
 class OnboardingController extends Controller
 {
+    public function __construct(
+        private readonly SubscriptionPlanService $planService,
+    ) {
+    }
+
     /**
      * Muestra la página de configuración inicial.
      */
@@ -31,11 +35,8 @@ class OnboardingController extends Controller
             'versions.items'
         ])->first();
 
-        // Obtener límites actuales con fallback seguro
+        // The active version drives the modules shown in the wizard.
         $currentVersion = $subscription->versions->first();
-        $limits = $currentVersion?->items
-            ?->where('item_type', 'limit')
-            ?->keyBy('item_key') ?? collect();
 
         // Módulos disponibles en el sistema
         $availableModules = PlanItem::where('type', PlanItemType::MODULE)
@@ -54,12 +55,12 @@ class OnboardingController extends Controller
             $activeModuleKeys = $availableModules->pluck('key')->toArray();
         }
 
-        // The AI Agent module is always active while its plan item stays free;
-        // once it has a price it behaves like any other add-on module.
-        $aiModuleItem = $availableModules->firstWhere('key', 'module_ai_agent');
-        if ($aiModuleItem && (float) $aiModuleItem->monthly_price <= 0 && !in_array('module_ai_agent', $activeModuleKeys)) {
-            $activeModuleKeys[] = 'module_ai_agent';
-        }
+        // Modules that cost nothing (AI agent included) are always active: they
+        // are part of the free plan, not add-ons the user can remove.
+        $activeModuleKeys = array_values(array_unique(array_merge(
+            $activeModuleKeys,
+            $this->planService->freeModuleKeys(),
+        )));
 
         // Items de tipo límite disponibles en el sistema (para precios, descripciones, etc.)
         $availableLimits = PlanItem::where('type', PlanItemType::LIMIT)
@@ -69,7 +70,7 @@ class OnboardingController extends Controller
 
         return Inertia::render('Onboarding/Setup', [
             'subscription'     => $subscription,
-            'currentLimits'    => $limits,
+            'planLimits'       => $this->planService->fixedLimits(),
             'availableModules' => $availableModules,
             'availableLimits'  => $availableLimits,
             'activeModuleKeys' => $activeModuleKeys,
@@ -169,21 +170,17 @@ class OnboardingController extends Controller
     }
 
     /**
-     * Finaliza el onboarding: guarda límites y módulos, marca el proceso como
-     * completado y redirige al dashboard.
+     * Finalizes the onboarding: the free plan limits are fixed by the plan
+     * itself, so only the selected modules are stored before completing.
      */
     public function finish(Request $request)
     {
         $validated = $request->validate([
-            'limits.limit_users'          => 'required|integer|min:1',
-            'limits.limit_cash_registers' => 'required|integer|min:1',
-            'limits.limit_products'       => 'required|integer|min:1',
-            'limits.limit_print_templates' => 'required|integer|min:1',
-            'modules'                     => 'required|array|min:1',
-            'modules.*'                   => 'string|exists:plan_items,key',
+            'modules'  => 'required|array|min:1',
+            'modules.*' => 'string|exists:plan_items,key',
         ]);
 
-        $this->savePlanSettings($validated['limits'], $validated['modules']);
+        $this->savePlanSettings($validated['modules']);
 
         return $this->completeOnboarding(
             Auth::user(),
@@ -192,82 +189,25 @@ class OnboardingController extends Controller
     }
 
     /**
-     * Sincroniza los límites de recursos y los módulos de la versión activa.
+     * Applies the fixed plan limits and the selected modules to the active
+     * version of the subscription.
      */
-    private function savePlanSettings(array $limits, array $modules): void
+    private function savePlanSettings(array $modules): void
     {
-        $version = Auth::user()->subscription->versions()->latest()->first();
+        $subscription = Auth::user()->subscription;
 
-        DB::transaction(function () use ($limits, $modules, $version) {
-            // 1. Actualizar límites
-            foreach ($limits as $key => $quantity) {
-                $version->items()->where('item_key', $key)->update(['quantity' => $quantity]);
-            }
-
-            // 2. Sincronizar módulos
-            $selectedModules = $modules;
-            $allModuleItems = PlanItem::where('type', PlanItemType::MODULE)->get()->keyBy('key');
-
-            // The AI Agent module stays active on its own while it is free;
-            // once it has a price it is opt-in like the rest of the add-ons.
-            $aiModuleItem = $allModuleItems->get('module_ai_agent');
-            if ($aiModuleItem && (float) $aiModuleItem->monthly_price <= 0 && !in_array('module_ai_agent', $selectedModules)) {
-                $selectedModules[] = 'module_ai_agent';
-            }
-
-            foreach ($allModuleItems as $moduleKey => $planItem) {
-                if (in_array($moduleKey, $selectedModules)) {
-                    $version->items()->updateOrCreate(
-                        ['item_key' => $moduleKey],
-                        [
-                            'item_type'      => 'module',
-                            'name'           => $planItem->name,
-                            'quantity'       => 1,
-                            'unit_price'     => $planItem->monthly_price,
-                            'billing_period' => BillingPeriod::MONTHLY,
-                        ]
-                    );
-                } else {
-                    $version->items()->where('item_key', $moduleKey)->delete();
-                }
-            }
+        DB::transaction(function () use ($subscription, $modules) {
+            $this->planService->applyFixedLimits($subscription);
+            $this->planService->syncModules($subscription, $modules);
         });
     }
 
     /**
-     * Activates the AI Agent module on the current version while it stays free.
-     */
-    private function activateAiAgentIfFree(Subscription $subscription): void
-    {
-        $aiModuleItem = PlanItem::where('type', PlanItemType::MODULE)
-            ->where('key', 'module_ai_agent')
-            ->first();
-
-        if (!$aiModuleItem || (float) $aiModuleItem->monthly_price > 0) {
-            return;
-        }
-
-        $version = $subscription->versions()->latest()->first();
-
-        $version->items()->updateOrCreate(
-            ['item_key' => 'module_ai_agent'],
-            [
-                'item_type'      => 'module',
-                'name'           => $aiModuleItem->name,
-                'quantity'       => 1,
-                'unit_price'     => $aiModuleItem->monthly_price,
-                'billing_period' => BillingPeriod::MONTHLY,
-            ]
-        );
-    }
-
-    /**
-     * Omite la configuración inicial y entra directo al dashboard.
+     * Skips the initial setup and goes straight to the dashboard.
      *
-     * Conserva los valores por defecto creados en el registro (plan básico,
-     * sucursal "Principal", módulos y límites), activa el agente de IA si
-     * sigue siendo gratis y sólo actualiza el nombre comercial si el usuario
-     * lo editó en la pantalla de bienvenida.
+     * Keeps the defaults created at registration (free plan limits, the
+     * "Principal" branch, modules and free add-ons) and only updates the
+     * commercial name when the user edited it on the welcome screen.
      */
     public function skip(Request $request)
     {
@@ -285,9 +225,9 @@ class OnboardingController extends Controller
             ]);
         }
 
-        // Keep the AI agent active while it remains free — both the welcome
-        // screen and the wizard present it as included during the trial.
-        $this->activateAiAgentIfFree($user->subscription);
+        // Free modules (AI agent included) stay active: they are part of the
+        // free plan, not trial features.
+        $this->planService->refreshModules($user->subscription);
 
         return $this->completeOnboarding(
             $user,

@@ -4,6 +4,7 @@ import { Head, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+import { useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     // --- AÑADIDO: Props para manejar los límites ---
@@ -16,6 +17,12 @@ const limitReached = computed(() => {
     if (props.cashRegisterLimit === -1) return false;
     return props.cashRegisterUsage >= props.cashRegisterLimit;
 });
+
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseLimitUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el límite de cajas registradoras de mi cuenta en EzyVentas.'
+));
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -42,14 +49,14 @@ const submit = () => {
                  <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
                  <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Cajas Alcanzado</h1>
                  <p class="text-gray-600 dark:text-gray-300 mb-6">
-                     Has alcanzado el límite de <strong>{{ cashRegisterLimit }} cajas registradoras</strong> permitido por tu plan actual. Para agregar más, por favor mejora tu plan.
+                     Has alcanzado el límite de <strong>{{ cashRegisterLimit }} cajas registradoras</strong> permitido por tu plan actual. Para agregar más, solicita un aumento de límite.
                  </p>
                  <div class="flex justify-center items-center gap-4">
                      <Link :href="route('cash-registers.index')">
                          <Button label="Volver a Cajas" severity="secondary" outlined />
                      </Link>
-                     <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
-                          <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                     <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
+                          <Button label="Solicitar aumento por WhatsApp" icon="pi pi-whatsapp" severity="success" />
                      </a>
                  </div>
             </div>

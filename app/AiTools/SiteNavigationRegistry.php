@@ -26,15 +26,28 @@ class SiteNavigationRegistry
         ['label' => 'Historial de cortes',      'route' => 'cash-register-sessions.index',   'permission' => 'cash_registers.sessions.access',    'keywords' => ['corte', 'cierre de caja', 'sesiones']],
         ['label' => 'Usuarios',                 'route' => 'users.index',                     'permission' => 'settings.users.access',             'keywords' => ['empleados', 'usuarios', 'permisos']],
         ['label' => 'Roles y permisos',         'route' => 'roles.index',                     'permission' => 'settings.roles_permissions.access', 'keywords' => ['roles', 'permisos']],
-        ['label' => 'Mi suscripción',           'route' => 'subscription.manage',             'permission' => null,                                'keywords' => ['plan', 'suscripción', 'límite', 'pago', 'renovar']],
+        ['label' => 'Mi suscripción',           'route' => 'subscription.show',               'permission' => null,                                'keywords' => ['plan', 'suscripción', 'límite', 'pago', 'renovar']],
         ['label' => 'Configuraciones generales','route' => 'settings.index',                  'permission' => 'settings.generals.access',          'keywords' => ['configuración', 'ajustes', 'generales']],
         ['label' => 'Tienda en línea',          'route' => 'online-store.config',             'permission' => 'online_store.config.access',        'keywords' => ['tienda en línea', 'online', 'ecommerce']],
         ['label' => 'Pedidos en línea',         'route' => 'online-store.orders.index',       'permission' => 'online_store.orders.access',        'keywords' => ['pedidos online', 'órdenes en línea']],
-        ['label' => 'Referidos',                'route' => 'referrals.index',                 'permission' => null,                                'keywords' => ['referidos', 'referir', 'recompensa']],
         ['label' => 'Plantillas personalizadas','route' => 'print-templates.index',           'permission' => 'settings.templates.access',         'keywords' => ['plantillas', 'impresión', 'tickets']],
         ['label' => 'Proveedores',              'route' => 'providers.index',                 'permission' => 'providers.access',                  'keywords' => ['proveedores', 'compras']],
         ['label' => 'Cuentas bancarias',        'route' => 'bank-accounts.index',             'permission' => 'bank_accounts.access',              'keywords' => ['bancos', 'cuentas', 'transferencias']],
     ];
+
+    public function __construct()
+    {
+        // The referral program is switched off for now (config/subscription.php):
+        // the assistant stops offering its page until that flag is turned on.
+        if (config('subscription.referrals.enabled')) {
+            $this->pages[] = [
+                'label' => 'Referidos',
+                'route' => 'referrals.index',
+                'permission' => null,
+                'keywords' => ['referidos', 'referir', 'recompensa'],
+            ];
+        }
+    }
 
     /**
      * Search for navigable pages matching the user's query, filtered by the user's permissions.

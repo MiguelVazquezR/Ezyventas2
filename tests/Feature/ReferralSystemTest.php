@@ -7,6 +7,7 @@ use App\Actions\Referral\GenerateReferralCodeAction;
 use App\Actions\Referral\ProcessReferralOnPaymentApprovedAction;
 use App\Actions\Referral\UpdateReferrerOngoingDiscountAction;
 use App\Models\Branch;
+use App\Models\PlanItem;
 use App\Models\ReferralCode;
 use App\Models\ReferralSettings;
 use App\Models\ReferralUsage;
@@ -15,8 +16,11 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
 use App\Models\SubscriptionVersion;
 use App\Models\User;
+use App\Services\Subscription\SubscriptionPlanService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -1498,5 +1502,159 @@ class ReferralSystemTest extends TestCase
 
         $response = $this->getJson(route('referrals.validate', ['code' => 'EZY-NOTFP']));
         $response->assertJson(['valid' => false, 'message' => 'El código de referido solo aplica en el primer pago.']);
+    }
+
+    // -----------------------------------------------------------------
+    // Checkout integration: the program is disabled by default and is
+    // reactivated with config('subscription.referrals.enabled')
+    // -----------------------------------------------------------------
+
+    #[Test]
+    public function checkout_charges_full_price_and_registers_no_usage_while_referrals_are_disabled(): void
+    {
+        [$owner, $subscription, $savedUsage] = $this->ownerWithEveryReferralDiscountAvailable();
+
+        $response = $this->actingAs($owner)->post(route('subscription.manage.store'), [
+            'billing_period' => 'mensual',
+            'items' => [['key' => 'module_pos', 'quantity' => 1]],
+            'total_amount' => 130,
+            'mode' => 'upgrade',
+            'payment_method' => 'transferencia',
+            'proof_of_payment' => UploadedFile::fake()->image('comprobante.jpg'),
+        ]);
+
+        $response->assertRedirect(route('subscription.show'));
+
+        $payment = $this->checkoutPaymentFor($subscription);
+
+        // Precio completo: sin descuento de cupón ni descuento continuo.
+        $this->assertSame(130.0, (float) $payment->amount);
+        $this->assertNull($payment->referral_discount_pct);
+        $this->assertNull($payment->referral_discount_amount);
+
+        // El cupón capturado en el registro queda intacto: sin pago asociado,
+        // sin cambiar de estado y sin registrar nuevos usos de referidos.
+        $savedUsage->refresh();
+        $this->assertNull($savedUsage->subscription_payment_id);
+        $this->assertSame(ReferralUsage::STATUS_EXPIRED, $savedUsage->reward_status);
+        $this->assertSame(2, ReferralUsage::count());
+    }
+
+    #[Test]
+    public function checkout_applies_every_referral_discount_when_the_program_is_enabled(): void
+    {
+        config(['subscription.referrals.enabled' => true]);
+
+        [$owner, $subscription, $savedUsage] = $this->ownerWithEveryReferralDiscountAvailable();
+
+        $response = $this->actingAs($owner)->post(route('subscription.manage.store'), [
+            'billing_period' => 'mensual',
+            'items' => [['key' => 'module_pos', 'quantity' => 1]],
+            'total_amount' => 130,
+            'mode' => 'upgrade',
+            'payment_method' => 'transferencia',
+            'proof_of_payment' => UploadedFile::fake()->image('comprobante.jpg'),
+        ]);
+
+        $response->assertRedirect(route('subscription.show'));
+
+        $payment = $this->checkoutPaymentFor($subscription);
+
+        // 15% del cupón guardado en el registro + 10% de descuento continuo
+        // por el referido activo: 130 - 19.50 = 110.50, 110.50 - 11.05 = 99.45.
+        $this->assertSame(99.45, (float) $payment->amount);
+        $this->assertSame(25.0, (float) $payment->referral_discount_pct);
+        $this->assertSame(30.55, (float) $payment->referral_discount_amount);
+
+        // El cupón guardado se confirma como uso pendiente de recompensa.
+        $savedUsage->refresh();
+        $this->assertSame($payment->id, $savedUsage->subscription_payment_id);
+        $this->assertSame(ReferralUsage::STATUS_PENDING, $savedUsage->reward_status);
+        $this->assertSame(2, ReferralUsage::count());
+    }
+
+    /**
+     * Owner about to pay for the first time with every referral discount
+     * available at once: the coupon captured at sign-up (15%) and the ongoing
+     * discount earned by referring somebody else (10%).
+     *
+     * @return array{0: User, 1: Subscription, 2: ReferralUsage}
+     */
+    private function ownerWithEveryReferralDiscountAvailable(): array
+    {
+        Storage::fake('public');
+
+        $branch = Branch::factory()->create();
+        $subscription = $branch->subscription;
+        $owner = User::factory()->create(['branch_id' => $branch->id]);
+
+        // Onboarding finished, so the checkout endpoint is reachable.
+        $subscription->update(['onboarding_completed_at' => now()]);
+
+        PlanItem::create([
+            'key' => 'module_pos',
+            'type' => 'module',
+            'name' => 'Punto de venta',
+            'description' => 'Módulo principal',
+            'monthly_price' => 130.0,
+            'is_active' => true,
+            'meta' => ['icon' => 'pi pi-shop'],
+        ]);
+
+        app(SubscriptionPlanService::class)->initializeFreePlan($subscription);
+
+        // Cupón capturado durante el registro, todavía sin pagar.
+        $referrerCode = ReferralCode::factory()->create([
+            'user_id' => User::factory()->create()->id,
+            'code' => 'EZY-COUPON',
+            'is_active' => true,
+        ]);
+
+        $savedUsage = ReferralUsage::factory()->create([
+            'referral_code_id' => $referrerCode->id,
+            'referred_subscription_id' => $subscription->id,
+            'subscription_payment_id' => null,
+            'reward_status' => ReferralUsage::STATUS_EXPIRED,
+            'referred_discount_pct' => 15.00,
+            'referrer_reward_pct' => 50.00,
+            'referrer_ongoing_discount_pct' => 10.00,
+        ]);
+
+        // El dueño también refirió a alguien con pago vigente, así que acumula
+        // un 10% de descuento continuo sobre cada periodo mensual.
+        $ownerCode = ReferralCode::factory()->create([
+            'user_id' => $owner->id,
+            'code' => 'EZY-OWNER1',
+            'is_active' => true,
+        ]);
+
+        $referredBranch = Branch::factory()->create();
+
+        SubscriptionVersion::factory()->create([
+            'subscription_id' => $referredBranch->subscription_id,
+            'start_date' => now()->subDays(5),
+            'end_date' => now()->addDays(25),
+        ]);
+
+        ReferralUsage::factory()->create([
+            'referral_code_id' => $ownerCode->id,
+            'referred_subscription_id' => $referredBranch->subscription_id,
+            'reward_status' => ReferralUsage::STATUS_PENDING,
+            'referrer_ongoing_discount_pct' => 10.00,
+        ]);
+
+        return [$owner, $subscription, $savedUsage];
+    }
+
+    /**
+     * Payment created by the checkout flow of the given subscription, ignoring
+     * any payment created by the factories of the fixture.
+     */
+    private function checkoutPaymentFor(Subscription $subscription): SubscriptionPayment
+    {
+        return SubscriptionPayment::whereHas(
+            'subscriptionVersion',
+            fn ($query) => $query->where('subscription_id', $subscription->id)
+        )->latest('id')->firstOrFail();
     }
 }

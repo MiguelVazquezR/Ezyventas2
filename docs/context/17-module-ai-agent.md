@@ -7,6 +7,9 @@ AI-powered chat assistant embedded in the app. Built as a local Composer package
 
 All configuration is **global** — provider, model, API key, and monthly token limit are read from `.env` and can be updated via the admin panel at `/admin/ai-agent`.
 
+### Help center guides
+When the user asks **how** to do a process, the agent calls `search_help_guides` (`app/AiTools/Registrars/HelpCenterTools.php`), backed by `App\Services\HelpCenter\HelpGuideSearchService`. It searches published `help_center_articles` by keyword and returns each guide with its `#guide-{id}` anchor, so the chat can link straight to the guide. `list_help_center_modules` lists the modules that currently have published guides. Replies use markdown links (`[Title](url)`); `AiChatDrawer.vue` keeps the URL hash during SPA navigation and `Pages/HelpCenter/Show.vue` scrolls to the anchored guide on mount.
+
 ---
 
 ## Key Files

@@ -11,6 +11,7 @@ import { useConfirm } from 'primevue/useconfirm';
 // Lógica de navegación
 import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
+import { useSupportWhatsApp } from '@/Composables';
 
 // Importación de Parciales Modulares
 import GeneralInfo from './Partials/GeneralInfo.vue';
@@ -29,6 +30,11 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseLimitUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el límite de productos de mi cuenta en EzyVentas.'
+));
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const items = ref([
@@ -62,7 +68,7 @@ const form = useForm({
     variants_matrix: [],
     composite_items: [],
     general_images: [],
-    variant_images: [],
+    variant_images: {},
 });
 
 // Modales de Gestión
@@ -74,6 +80,9 @@ const showAttributesModal = ref(false);
 const localCategories = ref([...props.categories]);
 const localBrands = ref([...props.brands]);
 const localProviders = ref([...props.providers]);
+// Copia reactiva de los atributos: el modal de atributos notifica los cambios y así el
+// generador de variantes y las imágenes obligatorias se reflejan al instante sin recargar.
+const localAttributeDefinitions = ref(props.attributeDefinitions.map(attribute => ({ ...attribute })));
 
 // Callbacks para Modales
 const handleNewCategory = (c) => { localCategories.value.push(c); form.category_id = c.id; };
@@ -87,6 +96,15 @@ const handleBrandDelete = (id) => { localBrands.value = localBrands.value.filter
 const handleNewProvider = (p) => { localProviders.value.push(p); form.provider_id = p.id; };
 const handleProviderUpdate = (p) => { const idx = localProviders.value.findIndex(x => x.id === p.id); if (idx !== -1) localProviders.value[idx] = p; };
 const handleProviderDelete = (id) => { localProviders.value = localProviders.value.filter(p => p.id !== id); if (form.provider_id === id) form.provider_id = null; };
+
+// Reemplaza únicamente los atributos de la categoría editada, conservando los de las demás
+const handleAttributesUpdated = ({ categoryId, attributes }) => {
+    const otherCategories = localAttributeDefinitions.value.filter(
+        attribute => Number(attribute.category_id) !== Number(categoryId)
+    );
+    localAttributeDefinitions.value = [...otherCategories, ...attributes]
+        .sort((a, b) => a.name.localeCompare(b.name));
+};
 
 // --- LÓGICA DE NAVEGACIÓN ---
 const formSections = [
@@ -123,12 +141,12 @@ const submit = () => {
             </div>
             <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-3">Límite de productos alcanzado</h2>
             <p class="text-gray-600 dark:text-gray-400 mb-8 max-w-lg mx-auto leading-relaxed">
-                Has alcanzado la cantidad máxima de productos permitidos en tu plan actual. Para seguir ampliando tu catálogo, necesitas mejorar tu suscripción.
+                Has alcanzado la cantidad máxima de productos permitidos en tu plan actual. Solicita un aumento de límite para seguir ampliando tu catálogo.
             </p>
             <div class="flex flex-col sm:flex-row justify-center gap-4">
-                <Link :href="route('subscription.manage')">
-                    <Button label="Mejorar suscripción" icon="pi pi-arrow-up" size="large" severity="primary" class="w-full sm:w-auto" />
-                </Link>
+                <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
+                    <Button label="Solicitar aumento por WhatsApp" icon="pi pi-whatsapp" size="large" severity="success" class="w-full sm:w-auto" />
+                </a>
                 <Link :href="route('products.index')">
                     <Button label="Volver al catálogo" icon="pi pi-arrow-left" size="large" severity="secondary" outlined class="w-full sm:w-auto" />
                 </Link>
@@ -162,7 +180,7 @@ const submit = () => {
                     <div id="inventory">
                         <Inventory 
                             :form="form" 
-                            :attributeDefinitions="attributeDefinitions"
+                            :attributeDefinitions="localAttributeDefinitions"
                             @open-attributes="showAttributesModal = true"
                         />
                     </div>
@@ -174,7 +192,7 @@ const submit = () => {
                     <div id="images">
                         <Images 
                             :form="form" 
-                            :attributeDefinitions="attributeDefinitions"
+                            :attributeDefinitions="localAttributeDefinitions"
                         />
                     </div>
 
@@ -189,7 +207,7 @@ const submit = () => {
         <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory" @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
         <ManageBrandsModal v-model:visible="showBrandModal" @created="handleNewBrand" @updated="handleBrandUpdate" @deleted="handleBrandDelete" />
         <ManageProvidersModal v-model:visible="showProviderModal" @created="handleNewProvider" @updated="handleProviderUpdate" @deleted="handleProviderDelete" />
-        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal" :category-id="form.category_id" />
+        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal" :category-id="form.category_id" @updated="handleAttributesUpdated" />
         
         <!-- Usamos el ConfirmPopup para las eliminaciones dentro de los componentes parciales -->
         <ConfirmPopup group="price-tiers-delete" />

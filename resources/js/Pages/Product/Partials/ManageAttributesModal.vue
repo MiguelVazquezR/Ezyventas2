@@ -79,6 +79,26 @@ const removeOption = (attribute, index) => {
     attribute.form.options.splice(index, 1);
 };
 
+/**
+ * Notifica al formulario de producto el estado actual de los atributos de la categoría,
+ * para que el generador de variantes y la sección de imágenes se actualicen al instante
+ * sin necesidad de recargar la página.
+ */
+const emitUpdated = () => {
+    emit('updated', {
+        categoryId: props.categoryId,
+        attributes: attributes.value
+            .filter(attribute => !attribute.isNew && attribute.form.id)
+            .map(attribute => ({
+                id: attribute.form.id,
+                category_id: props.categoryId,
+                name: attribute.form.name,
+                requires_image: !!attribute.form.requires_image,
+                options: attribute.form.options,
+            })),
+    });
+};
+
 const saveAttribute = async (attribute) => {
     attribute.form.processing = true;
     attribute.form.errors = {};
@@ -105,7 +125,7 @@ const saveAttribute = async (attribute) => {
         // Actualizar opciones con los IDs generados por el backend
         attribute.form.options = response.data.options || [];
         
-        emit('updated');
+        emitUpdated();
         
     } catch (error) {
         if (error.response && error.response.status === 422) {
@@ -128,7 +148,7 @@ const deleteAttribute = async (attribute, index) => {
         await axios.delete(route('attribute-definitions.destroy', attribute.form.id));
         attributes.value.splice(index, 1);
         toast.add({ severity: 'success', summary: 'Éxito', detail: 'Atributo eliminado.', life: 3000 });
-        emit('updated');
+        emitUpdated();
     } catch (error) {
         toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar el atributo.', life: 3000 });
     }

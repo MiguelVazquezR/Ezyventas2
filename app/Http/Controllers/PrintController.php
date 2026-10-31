@@ -2,22 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use Carbon\Carbon;
-use App\Enums\CustomerBalanceMovementType;
-use App\Enums\TransactionStatus;
-use App\Models\Customer; // <-- Importante
 use App\Models\PrintTemplate;
-use App\Models\Product;
-use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use App\Services\PrintEncoderService;
+use App\Services\Printing\PrintDataSourceResolver;
 use App\Services\WhatsAppTicketService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class PrintController extends Controller
 {
-    public function __construct(protected WhatsAppTicketService $whatsAppTicketService) {}
+    public function __construct(
+        protected WhatsAppTicketService $whatsAppTicketService,
+        protected PrintDataSourceResolver $printDataSources,
+    ) {}
 
     public function generatePayload(Request $request)
     {
@@ -37,41 +35,11 @@ class PrintController extends Controller
             abort(403);
         }
 
-        $dataSource = null;
-
-        // --- Lógica para Cliente ---
-        if ($validated['data_source_type'] === 'customer') {
-            $dataSource = Customer::where('id', $validated['data_source_id'])
-                ->where(function($q) use ($user) {
-                    // Verificación de seguridad: El cliente debe pertenecer a una sucursal de la misma suscripción
-                    $q->whereHas('branch', function($b) use ($user) {
-                        $b->where('subscription_id', $user->branch->subscription_id);
-                    })->orWhereNull('branch_id'); // O ser global si manejas clientes globales (opcional)
-                })->first();
-
-            if (!$dataSource) abort(404);
-        }
-        // ---------------------------
-        elseif ($validated['data_source_type'] === 'transaction' || $validated['data_source_type'] === 'pos' || $validated['data_source_type'] === 'general') {
-            $dataSource = Transaction::with(['customer', 'items.itemable'])->find($validated['data_source_id']);
-            if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) {
-                abort(404);
-            }
-        } elseif ($validated['data_source_type'] === 'product') {
-            $dataSource = Product::find($validated['data_source_id']);
-            if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) {
-                abort(404);
-            }
-        } elseif ($validated['data_source_type'] === 'service_order') {
-            $dataSource = ServiceOrder::find($validated['data_source_id']);
-            if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) {
-                abort(404);
-            }
-        }
-        
-        if (!$dataSource) {
-            abort(404, 'Data source not found.');
-        }
+        $dataSource = $this->printDataSources->resolve(
+            $validated['data_source_type'],
+            (int) $validated['data_source_id'],
+            $user
+        );
 
         $options = [
             'offset_x' => $validated['offset_x'] ?? 0,
@@ -107,7 +75,11 @@ class PrintController extends Controller
             abort(403);
         }
 
-        $dataSource = $this->resolveDataSource($validated['data_source_type'], $validated['data_source_id'], $user);
+        $dataSource = $this->printDataSources->resolve(
+            $validated['data_source_type'],
+            (int) $validated['data_source_id'],
+            $user
+        );
 
         $options = [
             'open_drawer' => $validated['open_drawer'] ?? false,
@@ -139,7 +111,11 @@ class PrintController extends Controller
             abort(403);
         }
 
-        $dataSource = $this->resolveDataSource($validated['data_source_type'], $validated['data_source_id'], $user);
+        $dataSource = $this->printDataSources->resolve(
+            $validated['data_source_type'],
+            (int) $validated['data_source_id'],
+            $user
+        );
 
         $html = PrintEncoderService::encodeTicketToHtml($template, $dataSource);
 
@@ -161,8 +137,11 @@ class PrintController extends Controller
             'data_source_id' => 'required|integer',
         ]);
 
-        $user = Auth::user();
-        $dataSource = $this->resolveDataSource($validated['data_source_type'], $validated['data_source_id'], $user);
+        $dataSource = $this->printDataSources->resolve(
+            $validated['data_source_type'],
+            (int) $validated['data_source_id'],
+            Auth::user()
+        );
 
         if (!$dataSource instanceof Transaction) {
             return response()->json([
@@ -172,175 +151,25 @@ class PrintController extends Controller
             ]);
         }
 
-        $dataSource->loadMissing(['customer', 'items', 'payments', 'branch.subscription', 'customerBalanceMovements']);
-
-        $subscription = $dataSource->branch?->subscription;
+        $dataSource->loadMissing(['customer', 'branch.subscription']);
         $customer = $dataSource->customer;
 
         // Pedidos (creados en POS como "por entregar"): ticket de pedido con su estado actual.
         if ($dataSource->isOrder()) {
-            $ticket = $this->whatsAppTicketService->buildOrderPayload($dataSource);
             $contactInfo = $dataSource->contact_info;
             $contactPhone = is_array($contactInfo) ? ($contactInfo['phone'] ?? null) : null;
 
             return response()->json([
-                'ticket' => $ticket,
+                'ticket' => $this->whatsAppTicketService->buildOrderPayload($dataSource),
                 'customer_phone' => $contactPhone ?: ($customer?->phone ?: null),
                 'customer_id' => $customer?->id ?: null,
             ]);
         }
 
-        $items = $dataSource->items->map(fn ($item) => [
-            'cantidad' => (float) $item->quantity,
-            'descripcion' => $item->description,
-            'total' => '$' . number_format((float) $item->line_total, 2),
-        ])->values();
-
-        $total = (float) $dataSource->subtotal - (float) $dataSource->total_discount + (float) $dataSource->total_tax + (float) ($dataSource->shipping_cost ?? 0);
-        $totalPaid = (float) $dataSource->payments->sum('amount');
-        $remainingDue = max(0, $total - $totalPaid);
-        $saleType = $this->detectSaleType($dataSource);
-
-        $ticket = [
-            'businessName' => $subscription?->commercial_name ?: ($dataSource->branch?->name ?: 'Mi Negocio'),
-            'title' => 'TICKET DE VENTA',
-            'saleType' => $saleType,
-            'saleTypeLabel' => $this->saleTypeLabel($saleType),
-            'date' => Carbon::parse($dataSource->created_at)->format('d/m/Y - H:i'),
-            'folio' => $dataSource->folio,
-            'customer' => $customer?->name ?: 'Público en General',
-            'items' => $items,
-            'total' => '$' . number_format($total, 2) . ' MXN',
-            'totalPaid' => '$' . number_format($totalPaid, 2) . ' MXN',
-            'remainingDue' => $remainingDue > 0.01 ? '$' . number_format($remainingDue, 2) . ' MXN' : null,
-            'expirationDate' => $dataSource->layaway_expiration_date
-                ? Carbon::parse($dataSource->layaway_expiration_date)->format('d/m/Y')
-                : null,
-            'paymentMethod' => $this->formatPaymentMethod($dataSource->payments, $total, $totalPaid),
-            'address' => $customer ? implode(', ', array_filter((array) ($customer->address ?? []))) : '',
-            'finalMessage' => '¡Gracias por tu compra!',
-        ];
-
         return response()->json([
-            'ticket' => $ticket,
+            'ticket' => $this->whatsAppTicketService->buildSalePayload($dataSource),
             'customer_phone' => $customer?->phone ?: null,
             'customer_id' => $customer?->id ?: null,
         ]);
-    }
-
-    /**
-     * Detecta el tipo de venta (contado, crédito o apartado) combinando el
-     * estatus actual de la transacción con sus movimientos de saldo.
-     */
-    private function detectSaleType(Transaction $transaction): string
-    {
-        $status = $transaction->status;
-
-        if ($status === TransactionStatus::ON_LAYAWAY) {
-            return 'apartado';
-        }
-
-        if ($status === TransactionStatus::PENDING) {
-            return 'credito';
-        }
-
-        // COMPLETED: distinguir por los movimientos de saldo generados al vender.
-        $movementTypes = $transaction->customerBalanceMovements
-            ->map(fn ($movement) => $movement->type->value);
-
-        if ($movementTypes->contains(CustomerBalanceMovementType::LAYAWAY_DEBT->value)) {
-            return 'apartado';
-        }
-
-        if ($movementTypes->contains(CustomerBalanceMovementType::CREDIT_SALE->value)) {
-            return 'credito';
-        }
-
-        // Crédito liquidado sin movimiento de deuda (se pagó con saldo a favor).
-        if ($transaction->layaway_expiration_date) {
-            return 'credito';
-        }
-
-        return 'contado';
-    }
-
-    private function saleTypeLabel(string $saleType): string
-    {
-        return match ($saleType) {
-            'credito' => 'A crédito',
-            'apartado' => 'Apartado',
-            default => 'Pago al contado',
-        };
-    }
-
-    /**
-     * Formatea el método de pago para el ticket de WhatsApp.
-     * Para efectivo puro incluye el monto pagado y el cambio calculado;
-     * para pagos mixtos muestra cada método con su monto.
-     */
-    private function formatPaymentMethod($payments, float $total, float $totalPaid): string
-    {
-        if ($payments->isEmpty()) {
-            return '';
-        }
-
-        $groups = $payments->groupBy(fn ($payment) => $payment->payment_method->value);
-
-        // Efectivo puro: conservar el formato actual con cambio.
-        if ($groups->count() === 1 && $groups->has('efectivo')) {
-            $change = max(0, $totalPaid - $total);
-            return 'Efectivo (Pagado: $' . number_format($totalPaid, 2) . ' | Cambio: $' . number_format($change, 2) . ')';
-        }
-
-        return $groups->map(function ($group, $method) {
-            $label = match ($method) {
-                'efectivo' => 'Efectivo',
-                'tarjeta' => 'Tarjeta',
-                'transferencia' => 'Transferencia',
-                'saldo' => 'Saldo a favor',
-                'intercambio' => 'Intercambio',
-                default => ucfirst($method),
-            };
-
-            return $label . ': $' . number_format((float) $group->sum('amount'), 2);
-        })->values()->implode(', ');
-    }
-
-    private function resolveDataSource(string $type, int $id, $user)
-    {
-        if ($type === 'customer') {
-            return Customer::where('id', $id)
-                ->where(function ($q) use ($user) {
-                    $q->whereHas('branch', function ($b) use ($user) {
-                        $b->where('subscription_id', $user->branch->subscription_id);
-                    })->orWhereNull('branch_id');
-                })->firstOrFail();
-        }
-
-        if (in_array($type, ['transaction', 'pos', 'general', 'order'])) {
-            $source = Transaction::with(['customer', 'items.itemable'])->find($id);
-            if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
-                abort(404);
-            }
-            return $source;
-        }
-
-        if ($type === 'product') {
-            $source = Product::find($id);
-            if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
-                abort(404);
-            }
-            return $source;
-        }
-
-        if ($type === 'service_order') {
-            $source = ServiceOrder::find($id);
-            if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
-                abort(404);
-            }
-            return $source;
-        }
-
-        abort(404, 'Data source not found.');
     }
 }

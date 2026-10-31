@@ -19,7 +19,9 @@ class UpdateServiceAction
                 $data['slug'] = Service::generateUniqueSlug($data['name'], $user->branch->subscription_id, $service->id);
             }
 
-            $serviceData = collect($data)->except(['has_variants', 'variants', 'image', 'branch_ids'])->toArray();
+            $serviceData = collect($data)
+                ->except(['has_variants', 'variants', 'image', 'remove_image', 'branch_ids'])
+                ->toArray();
 
             if (!empty($data['has_variants'])) {
                 $serviceData['base_price'] = 0;
@@ -41,10 +43,14 @@ class UpdateServiceAction
                 $service->variants()->delete();
             }
 
+            // The stored image is only replaced when a new file is uploaded, and it is
+            // only removed when the user explicitly asks for it. Otherwise it is kept.
             if ($imageFile) {
                 $service->clearMediaCollection('service-image');
                 $mediaItem = $service->addMedia($imageFile)->toMediaCollection('service-image');
                 $this->optimizeMediaLocal($mediaItem);
+            } elseif (! empty($data['remove_image'])) {
+                $service->clearMediaCollection('service-image');
             }
 
             return $service;

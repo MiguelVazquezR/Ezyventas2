@@ -143,7 +143,7 @@ const confirmRemovePriceTier = (event, index) => {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
             <!-- Precios Base -->
             <div>
-                <InputLabel for="cost_price" value="Precio de costo (Opcional)" />
+                <InputLabel for="cost_price" value="Costo de compra (Opcional)" />
                 <InputNumber v-model="form.cost_price" id="cost_price" mode="currency" currency="MXN" locale="es-MX"
                     class="w-full mt-1" placeholder="$0.00" />
                 <InputError :message="form.errors.cost_price" class="mt-2" />

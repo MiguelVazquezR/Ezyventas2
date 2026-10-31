@@ -78,6 +78,17 @@ watch(() => props.form.category_id, (newVal, oldVal) => {
     }
 });
 
+// Si un atributo se elimina o renombra desde el modal de configuración, descartamos las
+// selecciones huérfanas para no generar combinaciones fantasma al recalcular la matriz.
+watch(categoryAttributes, (currentAttributes) => {
+    const validNames = currentAttributes.map(attr => attr.name);
+    Object.keys(selectedAttributeValues.value).forEach(name => {
+        if (!validNames.includes(name)) {
+            delete selectedAttributeValues.value[name];
+        }
+    });
+});
+
 
 // --- GENERADOR DE MATRIZ DE VARIANTES ---
 const generateMatrix = () => {

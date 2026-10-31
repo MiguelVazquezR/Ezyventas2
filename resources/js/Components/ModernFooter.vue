@@ -33,6 +33,10 @@ const scrollToElement = (id) => {
                     <p class="text-gray-300 max-w-sm leading-relaxed text-sm md:text-base font-light">
                         La plataforma todo en uno para gestionar, controlar y escalar tu negocio sin complicaciones.
                     </p>
+                    <span class="mt-4 inline-flex items-center gap-2 bg-white/5 border border-[#F68C0F]/30 text-[#F68C0F] px-3.5 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                        <span class="w-1.5 h-1.5 rounded-full bg-[#F68C0F] animate-pulse"></span>
+                        Ahora es gratis
+                    </span>
                 </div>
                 
                 <div>
@@ -52,7 +56,8 @@ const scrollToElement = (id) => {
                     <h4 class="text-sm font-bold text-white uppercase tracking-widest">Producto</h4>
                     <ul class="space-y-3 text-sm text-gray-300 font-medium">
                         <li><button @click="scrollToElement('features')" class="hover:text-[#F68C0F] transition-colors duration-200">Funcionalidades</button></li>
-                        <li><button @click="scrollToElement('prices')" class="hover:text-[#F68C0F] transition-colors duration-200">Planes y Precios</button></li>
+                        <li><button @click="scrollToElement('gratis')" class="hover:text-[#F68C0F] transition-colors duration-200">Gratis</button></li>
+                        <li><button @click="scrollToElement('app-movil')" class="hover:text-[#F68C0F] transition-colors duration-200">App móvil</button></li>
                         <li><span class="text-gray-300 cursor-not-allowed flex items-center gap-2 justify-center md:justify-start">Ezy Restaurant <span class="text-[10px] bg-white/10 text-white/70 px-1.5 py-0.5 rounded border border-white/5">Pronto</span></span></li>
                     </ul>
                 </div>
@@ -62,12 +67,7 @@ const scrollToElement = (id) => {
                     <h4 class="text-sm font-bold text-white uppercase tracking-widest">Recursos</h4>
                     <ul class="space-y-3 text-sm text-gray-300 font-medium">
                         <li><button @click="scrollToElement('faq')" class="hover:text-[#F68C0F] transition-colors duration-200">Preguntas Frecuentes</button></li>
-                        <!-- CAMBIO AQUÍ: Usamos Link y la ruta correcta -->
-                        <!-- <li>
-                            <Link :href="route('help-center')" class="hover:text-[#F68C0F] transition-colors">
-                                Centro de Ayuda
-                            </Link>
-                        </li> -->
+                        <li><a :href="route('app.download')" class="hover:text-[#F68C0F] transition-colors duration-200">Descargar app</a></li>
                     </ul>
                 </div>
 

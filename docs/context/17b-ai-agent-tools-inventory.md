@@ -18,7 +18,7 @@
 
 ---
 
-## Tool Inventory (33 tools across 14 categories)
+## Tool Inventory (35 tools across 15 categories)
 
 ### 1. Financial Reports
 
@@ -514,6 +514,34 @@
   - Pending amounts mirror the customer UI: pending transfer payments awaiting approval (MercadoPago pending payments are excluded, same as `Subscription::getPendingPayment()`).
   - Payment queries order by qualified columns (`subscription_payments.id`) because `Subscription::getPendingPayment()`/`getLastRejectedPayment()` order by an unqualified `created_at`, which is ambiguous across the HasManyThrough join.
 
+### 16. Help Center (added 2026-10-18)
+
+#### `search_help_guides`
+- **Description**: Busca guías escritas del Centro de ayuda de EzyVentas y devuelve el enlace directo a cada guía que coincide. Se usa cuando el usuario pregunta cómo realizar un proceso.
+- **Parameters**:
+  | Name | Type | Required | Notes |
+  |---|---|---|---|
+  | `query` | string | yes | Process the user wants to learn, in their own words ("registrar una venta", "corte de caja") |
+  | `module` | string | no | Module key or label (`pos`, `billing`, `Facturación`, …) to narrow the search |
+- **Service called**: `App\Services\HelpCenter\HelpGuideSearchService::search()`
+- **Models/tables touched**: `help_center_articles` (published only: `is_published = true` and `published_at <= now()`)
+- **Tenant scoping**: None — help center content is shared by every tenant
+- **Read/Write**: Read-only
+- **Permission**: `null`
+- **Notes**:
+  - Candidate rows are narrowed with SQL `LIKE` and then scored in PHP (title ×6, excerpt ×3, content ×1), so results are ranked by relevance instead of `sort_order`.
+  - Scoring is case- and accent-insensitive. When SQL returns nothing, the service rescoring pass runs over every published guide of the module, because `LIKE` is not accent-insensitive on SQLite.
+  - Each result carries `url` = `help-center.show` + `#guide-{id}`, matching the `id="guide-{id}"` anchor rendered by `Pages/HelpCenter/Show.vue`. `AiChatDrawer.vue` preserves the URL hash during SPA navigation and `Show.vue` scrolls to the anchored guide on mount.
+
+#### `list_help_center_modules`
+- **Description**: Lista los módulos del Centro de ayuda que tienen guías publicadas, con su descripción, cantidad de guías y enlace.
+- **Parameters**: None
+- **Service called**: `App\Services\HelpCenter\HelpGuideSearchService::modules()`
+- **Models/tables touched**: `help_center_articles` (published only); labels and descriptions come from `config/tutorials.php` and `config/help_center.php`
+- **Tenant scoping**: None — help center content is shared by every tenant
+- **Read/Write**: Read-only
+- **Permission**: `null`
+
 ---
 
 ## Scoping Summary
@@ -524,6 +552,7 @@
 | `subscription_id` (from `$user->branch->subscription_id`) | 3 tools: `ranking_by_branch`, `active_promotions`, `export_products_excel` | Cross-branch within same subscription |
 | `subscription_id` (from `$user->subscription`) | 1 tool: `subscription_status` | Owner-only (users without roles); billing data of the user's own subscription |
 | No data scoping (hardcoded array, permission-filtered) | 1 tool: `find_page_location` | Navigation registry |
+| No data scoping (published help center guides only) | 2 tools: `search_help_guides`, `list_help_center_modules` | Help center content is the same for every tenant; only published guides are exposed |
 
 ---
 
@@ -579,9 +608,9 @@ The following business questions have **no corresponding tool**. The AI agent ca
 
 1. **All business tools are read-only** — The only write operations are the framework-level audit trail (`AiToolExecution`, `AiUsageMonthly` increments) managed by `AiAgentManager`, not by tools themselves. The `export_products_excel` tool writes a file to disk but does not modify database records.
 
-2. **Tools call App Services, not raw Eloquent in most cases** — 27 of 33 tools delegate to dedicated Service classes. Only 2 tools (`search_customers`, `search_products`) use direct Eloquent queries from within the tool closure. This follows the project's architecture guidelines.
+2. **Tools call App Services, not raw Eloquent in most cases** — 29 of 35 tools delegate to dedicated Service classes. Only 2 tools (`search_customers`, `search_products`) use direct Eloquent queries from within the tool closure. This follows the project's architecture guidelines.
 
-3. **Permission gating is consistent** — Every tool definition includes a `permission` key (nullable for `find_page_location` which gates internally). Tools are filtered by `$user->can()` before being passed to the LLM.
+3. **Permission gating is consistent** — Every tool definition includes a `permission` key (nullable for the navigation and help center tools, which are available to every authenticated user). Tools are filtered by `$user->can()` before being passed to the LLM.
 
 4. **Tenant scoping is server-side only** — The `AiToolProvider` contract explicitly states: "Each tool closure MUST derive tenant scoping (subscription_id / branch_id) from $user server-side — never from a tool parameter supplied by the LLM." All tools comply. The `promotion_usage_stats` cross-subscription leak was fixed on 2026-07-19.
 

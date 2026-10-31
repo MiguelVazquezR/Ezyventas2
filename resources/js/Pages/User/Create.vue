@@ -6,6 +6,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import RolePermissionsModal from '@/Components/RolePermissionsModal.vue';
 import CreateRoleModal from '@/Components/CreateRoleModal.vue';
+import { useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     roles: Array,
@@ -20,6 +21,12 @@ const limitReached = computed(() => {
     if (props.userLimit === -1) return false; // Si es ilimitado, nunca se alcanza
     return props.userUsage >= props.userLimit;
 });
+
+const { whatsAppUrl } = useSupportWhatsApp();
+
+const increaseLimitUrl = computed(() => whatsAppUrl(
+    'Hola, necesito aumentar el límite de usuarios de mi cuenta en EzyVentas.'
+));
 
 const form = useForm({
     name: '',
@@ -71,14 +78,14 @@ const showRolePermissions = (roleId) => {
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Usuarios Alcanzado</h1>
                 <p class="text-gray-600 dark:text-gray-300 mb-6">
                     Has alcanzado el límite de <strong>{{ userLimit }} usuarios</strong> permitido por tu plan actual.
-                    Para agregar más usuarios, por favor mejora tu plan.
+                    Para agregar más usuarios, solicita un aumento de límite.
                 </p>
                 <div class="flex justify-center items-center gap-4">
                     <Link :href="route('users.index')">
                     <Button label="Volver a Usuarios" severity="secondary" outlined />
                     </Link>
-                    <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
-                        <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                    <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
+                        <Button label="Solicitar aumento por WhatsApp" icon="pi pi-whatsapp" severity="success" />
                     </a>
                 </div>
             </div>
