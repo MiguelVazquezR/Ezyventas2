@@ -76,7 +76,7 @@ const galleriaPt = computed(() => ({
             'sticky top-0 z-40 backdrop-blur-xl border-b transition-colors',
             isDarkTheme ? 'bg-[#1c1c1c]/95 border-[#2a2a2a]' : 'bg-[#faf8f5]/90 border-[#e8e3dc]'
         ]">
-            <div class="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+            <div class="mx-auto w-full max-w-[1720px] px-4 py-4 md:px-6 lg:px-8 flex items-center justify-between">
                 <!-- Logo + Name -->
                 <Link :href="route('store.home', { slug: slug })" class="flex items-center gap-3.5 group">
                     <img v-if="store.logo_url" :src="store.logo_url"
@@ -147,7 +147,7 @@ const galleriaPt = computed(() => ({
             'border-t mt-auto',
             isDarkTheme ? 'border-[#2a2a2a] bg-[#1a1a1a]' : 'border-[#e8e3dc] bg-white'
         ]">
-            <div class="max-w-7xl mx-auto px-4 md:px-8 py-8">
+            <div class="mx-auto w-full max-w-[1720px] px-4 py-8 md:px-6 lg:px-8">
                 <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                     <!-- Store info -->
                     <div class="text-center md:text-left">

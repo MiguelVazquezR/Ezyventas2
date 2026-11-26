@@ -85,7 +85,7 @@ class PublicStoreController extends Controller
             $query->reorder()->orderByRaw("COALESCE(online_price, selling_price) {$direction}");
         }
 
-        $products = $query->paginate(24)->withQueryString();
+        $products = $query->paginate(30)->withQueryString();
 
         // Append computed stock to each product
         $products->getCollection()->transform(function ($product) {
@@ -107,18 +107,40 @@ class PublicStoreController extends Controller
             ->get();
 
         // Get distinct categories from products in this subscription
-        $categories = \App\Models\Category::whereHas('products', fn($q) => $q
+        $categories = \App\Models\Category::query()
+            ->select('id', 'name')
+            ->whereHas('products', fn($q) => $q
                 ->where('show_online', true)
                 ->whereHas('branch', fn($sq) => $sq->where('subscription_id', $subscriptionId))
             )
-            ->select('id', 'name')
+            ->withCount(['products as products_count' => fn($q) => $q
+                ->where('show_online', true)
+                ->whereHas('branch', fn($sq) => $sq->where('subscription_id', $subscriptionId))
+            ])
             ->orderBy('name')
             ->get();
+
+        // Price bounds of the whole catalog, used by the price filter slider
+        $priceBounds = Product::where('show_online', true)
+            ->whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
+            ->selectRaw('MIN(COALESCE(online_price, selling_price)) as min_price, MAX(COALESCE(online_price, selling_price)) as max_price')
+            ->first();
+
+        $priceRange = [
+            'min' => (float) ($priceBounds->min_price ?? 0),
+            'max' => (float) ($priceBounds->max_price ?? 0),
+        ];
+
+        $catalogTotal = Product::where('show_online', true)
+            ->whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
+            ->count();
 
         return Inertia::render('Store/Index', [
             'products' => $products,
             'featured' => $featured,
             'categories' => $categories,
+            'priceRange' => $priceRange,
+            'catalogTotal' => $catalogTotal,
             'filters' => $request->only(['search', 'category', 'min_price', 'max_price', 'sort']),
         ]);
     }
