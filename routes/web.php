@@ -18,7 +18,8 @@ Route::middleware('track.visit')->get('/', function () {
     }
 });
 
-// Android app download page (option A: informational page until the APK is published).
+// Android app download page. The release APK is served as a static file from
+// public/downloads/ezyventas-android.apk (see resources/js/Pages/DownloadApp.vue).
 Route::get('/descargar-app', fn () => inertia('DownloadApp'))->name('app.download')->middleware('track.visit');
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
