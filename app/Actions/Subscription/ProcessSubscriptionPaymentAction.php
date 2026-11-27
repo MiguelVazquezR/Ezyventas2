@@ -15,7 +15,6 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
 use App\Models\SubscriptionVersion;
 use App\Models\User;
-use App\Services\Subscription\SubscriptionPlanService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -24,11 +23,6 @@ use Illuminate\Support\Facades\Mail;
 
 class ProcessSubscriptionPaymentAction
 {
-    public function __construct(
-        private readonly SubscriptionPlanService $planService,
-    ) {
-    }
-
     /**
      * Orquesta el proceso de pago, actualización de versión y generación de gastos.
      * Devuelve el SubscriptionPayment creado para que el controller pueda redirigir a MP si es necesario.
@@ -53,20 +47,6 @@ class ProcessSubscriptionPaymentAction
     private function calculateDiscounts(Subscription $subscription, array $validated): array
     {
         $amount = (float) $validated['total_amount'];
-
-        // The referral program is switched off for now (config/subscription.php):
-        // checkouts are charged at full price and no ReferralUsage is registered.
-        // The referral logic below stays untouched so flipping the flag restores
-        // the previous behaviour without further changes.
-        if (! config('subscription.referrals.enabled')) {
-            return [
-                'amount'                 => $amount,
-                'referralDiscountPct'    => null,
-                'referralDiscountAmount' => null,
-                'referralData'           => null,
-            ];
-        }
-
         $referralDiscountPct = null;
         $referralDiscountAmount = null;
         $referralData = $this->resolveReferralData($subscription, $validated, $amount);
@@ -483,19 +463,14 @@ class ProcessSubscriptionPaymentAction
     private function calculateSubscriptionDates(?SubscriptionVersion $baseVersion, string $mode, BillingPeriod $billingPeriod): array
     {
         $now = now();
-
-        // The free plan is open-ended, so it leaves no paid period to prorate:
-        // an upgrade on top of it starts today and covers the full billing
-        // period purchased instead of inheriting the plan horizon as end date.
-        $baseEndDate = $baseVersion && ! $this->planService->isOpenEndedVersion($baseVersion)
-            ? Carbon::parse($baseVersion->end_date)
-            : null;
+        $baseEndDate = $baseVersion ? Carbon::parse($baseVersion->end_date) : clone $now;
+        $isExpired = $baseEndDate->isPast();
 
         // Regla: 30 días mensuales exactos o 365 anuales
         $daysToAdd = $billingPeriod === BillingPeriod::ANNUALLY ? 365 : 30;
 
-        if ($baseEndDate === null || $baseEndDate->isPast()) {
-            // CASO 1: Sin periodo pagado vigente (vencida o plan gratuito).
+        if ($isExpired) {
+            // CASO 1: Expirada. 
             // Inicia hoy. Se suman los días desde HOY (no pierde días por haber estado inactiva)
             $startDate = clone $now;
             $endDate = $startDate->copy()->addDays($daysToAdd);

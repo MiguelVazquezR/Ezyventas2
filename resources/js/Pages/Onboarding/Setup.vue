@@ -11,7 +11,7 @@ import WelcomeQuick from './Partials/WelcomeQuick.vue';
 // --- Props ---
 const props = defineProps({
     subscription: Object,
-    planLimits: Object,
+    currentLimits: Object,
     availableModules: Array,
     availableLimits: Array,
     activeModuleKeys: Array,
@@ -76,8 +76,13 @@ const form = useForm({
             ? branch.operating_hours
             : createDefaultHours(),
     })),
-    // Fixed limits are applied server-side (config/subscription.php): the
-    // wizard only displays them, so they are not part of the payload.
+    limits: {
+        limit_users: Math.max(1, props.currentLimits?.limit_users?.quantity ?? 5),
+        limit_cash_registers: Math.max(1, props.currentLimits?.limit_cash_registers?.quantity ?? 3),
+        limit_products: Math.max(1200, props.currentLimits?.limit_products?.quantity ?? 1100),
+        limit_services: Math.max(100, props.currentLimits?.limit_services?.quantity ?? 100),
+        limit_print_templates: Math.max(2, props.currentLimits?.limit_print_templates?.quantity ?? 2),
+    },
     // Additional modules start disabled; only the essential plan arrives
     // active, and the AI agent joins only while its plan item stays free.
     modules: [
@@ -149,7 +154,7 @@ const goToStep = (step) => {
 const finishOnboarding = () => {
     saving.value = true;
     form.post(route('onboarding.finish'), {
-        data: { modules: form.modules },
+        data: { limits: form.limits, modules: form.modules },
         preserveScroll: true,
         onSuccess: () => { sessionStorage.removeItem('onboardingStep'); },
         onError: (err) => { console.error('Error al finalizar onboarding:', err); },
@@ -278,7 +283,6 @@ const currentBranchHours = computed(() => {
                                 :saving="saving"
                                 :available-modules="availableModules"
                                 :available-limits="availableLimits"
-                                :plan-limits="planLimits"
                                 @finish="finishOnboarding"
                                 @go-back="activeStep = 0"
                             />

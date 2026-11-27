@@ -3,7 +3,6 @@ import { useForm } from '@inertiajs/vue3';
 import { watch, computed } from 'vue';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
-import { useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     visible: Boolean,
@@ -23,12 +22,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible']);
-
-const { whatsAppUrl } = useSupportWhatsApp();
-
-const increaseBranchesUrl = computed(() => whatsAppUrl(
-    'Hola, necesito aumentar el número de sucursales de mi cuenta en EzyVentas.'
-));
 
 const isEditMode = computed(() => !!props.branch);
 
@@ -82,10 +75,10 @@ const submit = () => {
              <i class="pi pi-exclamation-triangle !text-5xl text-amber-500 mb-4"></i>
              <h3 class="text-lg font-bold mb-2">Límite de sucursales alcanzado</h3>
              <p class="text-gray-600 dark:text-gray-300 mb-6">
-                 Tu plan actual permite hasta <strong>{{ limit }} sucursales</strong>. Solicita a soporte el aumento para registrar una nueva ubicación.
+                 Has alcanzado el límite de <strong>{{ limit }} sucursales</strong> permitido por tu plan actual.
              </p>
-             <a v-if="increaseBranchesUrl" :href="increaseBranchesUrl" target="_blank" rel="noopener noreferrer" class="w-full">
-                  <Button label="Solicitar aumento" icon="pi pi-whatsapp" severity="success" class="w-full" />
+             <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer" class="w-full">
+                  <Button label="Mejorar mi plan" icon="pi pi-arrow-up" class="w-full" />
              </a>
         </div>
         

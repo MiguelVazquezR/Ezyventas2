@@ -21,9 +21,6 @@ const subscription = computed(() => page.props.auth.subscription);
 const currentBranch = computed(() => page.props.auth.current_branch);
 const availableBranches = computed(() => page.props.auth.available_branches);
 
-// El programa de referidos está desactivado (config/subscription.php).
-const referralsEnabled = computed(() => page.props.referralsEnabled === true);
-
 const userMenu = ref();
 const branchMenu = ref();
 const mobileUserMenuVisible = ref(false);
@@ -34,7 +31,7 @@ const userMenuItems = computed(() => {
         { label: 'Perfil', icon: 'pi pi-user', command: () => router.get(route('profile.show')) },
     ];
     if (isOwner.value) {
-        items.push({ label: 'Mi cuenta', icon: 'pi pi-star', command: () => router.get(route('subscription.show')) });
+        items.push({ label: 'Suscripción', icon: 'pi pi-star', command: () => router.get(route('subscription.show')) });
     }
     items.push(
         { label: 'Soporte', icon: 'pi pi-headphones', command: () => { supportModalVisible.value = true; } },
@@ -138,7 +135,7 @@ const drawerPt = {
             <!-- COMPONENTES MODULARES AISLADOS -->
             <TopbarReleaseNotes />
             <TopbarNotifications />
-            <TopbarReferrals v-if="isOwner && referralsEnabled" />
+            <TopbarReferrals v-if="isOwner" />
 
             <!-- Menú Usuario (Mobile) -->
             <button type="button" class="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors lg:hidden" @click="mobileUserMenuVisible = true">
@@ -238,7 +235,7 @@ const drawerPt = {
 
         <!-- Acciones Usuario Mobile -->
         <div class="p-6">
-            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Cuenta</h3>
+            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Mi cuenta</h3>
             <div class="flex flex-col gap-1">
                 <button v-for="item in userMenuItems" :key="item.label"
                     @click="item.command(); mobileUserMenuVisible = false;"

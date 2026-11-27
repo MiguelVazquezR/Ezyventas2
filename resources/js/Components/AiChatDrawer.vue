@@ -94,7 +94,7 @@ function onKeydown(e) {
     }
 }
 
-function goToAccount() {
+function goToManageSubscription() {
     router.visit(route('subscription.show'));
 }
 
@@ -489,13 +489,13 @@ const drawerStyle = computed(() => {
                                 Módulo no disponible
                             </p>
                             <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
-                                El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde Mi cuenta.
+                                El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde tu suscripción.
                             </p>
                             <Button
-                                label="Ir a Mi cuenta"
+                                label="Gestionar suscripción"
                                 size="small"
                                 class="!rounded-xl !text-xs !font-bold"
-                                @click="goToAccount"
+                                @click="goToManageSubscription"
                             />
                         </div>
                     </div>

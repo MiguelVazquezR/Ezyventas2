@@ -177,10 +177,6 @@ const authUser = computed(() => usePage().props.auth.user);
 // Comprobar si es Super Admin (Suscripción 1)
 const isSuperAdmin = computed(() => authUser.value.branch?.subscription_id === 1);
 
-// El programa de referidos está desactivado (config/subscription.php), así que
-// su grupo desaparece del menú de administración.
-const referralsEnabled = computed(() => usePage().props.referralsEnabled === true);
-
 // Definir el modelo del menú de administración
 const adminModel = ref([
     {
@@ -270,7 +266,7 @@ const adminModel = ref([
                 to: route('admin.help-articles.index'),
                 routeName: 'admin.help-articles.*'
             },
-            ...(referralsEnabled.value ? [{
+            {
                 label: 'Referidos',
                 icon: 'pi pi-users',
                 items: [
@@ -287,7 +283,7 @@ const adminModel = ref([
                         routeName: 'admin.referrals.settings'
                     },
                 ]
-            }] : []),
+            },
         ]
     },
 ]);

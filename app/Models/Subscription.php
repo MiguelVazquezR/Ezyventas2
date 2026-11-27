@@ -146,7 +146,7 @@ class Subscription extends Model implements HasMedia
     {
         $currentVersion = $this->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
-        $limitProducts = $limitItem ? $limitItem->quantity : config('subscription.limits.limit_products');
+        $limitProducts = $limitItem ? $limitItem->quantity : 50;
 
         if ($limitProducts === -1) return false;
 
@@ -160,7 +160,7 @@ class Subscription extends Model implements HasMedia
     {
         $currentVersion = $this->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
-        $limitServices = $limitItem ? $limitItem->quantity : config('subscription.limits.limit_services');
+        $limitServices = $limitItem ? $limitItem->quantity : 100;
 
         if ($limitServices === -1) {
             return false; // -1 significa ilimitado
@@ -175,10 +175,7 @@ class Subscription extends Model implements HasMedia
     public function getUserLimitData(): array
     {
         $currentVersion = $this->versions()->latest('start_date')->first();
-
-        // The free plan always ships a limit_users item; the config value is the
-        // fallback when a version was created before that item existed.
-        $limit = config('subscription.limits.limit_users');
+        $limit = -1; // -1 significa ilimitado
         
         if ($currentVersion) {
             $limitItem = $currentVersion->items()->where('item_key', 'limit_users')->first();

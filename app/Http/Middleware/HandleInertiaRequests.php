@@ -77,16 +77,10 @@ class HandleInertiaRequests extends Middleware
                 'whatsapp_label' => $this->supportChannel('whatsapp')['value'] ?? null,
             ],
 
-            // Referral program switch (config/subscription.php). Shared so the
-            // menu, the topbar and the checkout hide every referral entry from a
-            // single source of truth.
-            'referralsEnabled' => (bool) config('subscription.referrals.enabled'),
-
-            // Notificaciones del sistema de referidos (para badge en topbar).
-            // Mientras el programa esté desactivado no se consulta nada.
+            // Notificaciones del sistema de referidos (para badge en topbar)
             'referralNotifications' => function () use ($request) {
                 $user = $request->user();
-                if (!$user || ! config('subscription.referrals.enabled')) return null;
+                if (!$user) return null;
 
                 return [
                     'pending_rewards_count' => $user->referralUsagesAsReferrer()

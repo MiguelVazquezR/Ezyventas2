@@ -5,18 +5,15 @@ namespace App\Http\Controllers;
 use App\Actions\Subscription\ApproveSubscriptionPaymentAction;
 use App\Actions\Subscription\ProcessSubscriptionPaymentAction;
 use App\Actions\Subscription\RevertFailedSubscriptionAction;
-use App\Actions\Subscription\ToggleSubscriptionModuleAction;
 use App\Enums\BillingPeriod;
 use App\Enums\InvoiceStatus;
 use App\Enums\SubscriptionPaymentStatus;
-use App\Http\Requests\Subscription\ToggleSubscriptionModuleRequest;
 use App\Models\BankAccount;
 use App\Models\ExpenseCategory;
 use App\Models\PlanItem;
 use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
 use App\Services\PlatformMercadoPagoService;
-use App\Services\Subscription\SubscriptionPlanService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response as HttpResponse;
@@ -30,7 +27,7 @@ use Inertia\Response;
 
 class SubscriptionController extends Controller
 {
-    public function show(SubscriptionPlanService $planService): Response
+    public function show(): Response
     {
         $user = Auth::user();
 
@@ -41,8 +38,8 @@ class SubscriptionController extends Controller
         $subscription = $user->branch->subscription()->with([
             'branches',
             'bankAccounts.branches:id,name',
-            'versions' => fn ($query) => $query->with(['items', 'payments'])->latest('id'),
-            'media',
+            'versions' => fn($query) => $query->with(['items', 'payments'])->latest('id'),
+            'media'
         ])->withCount([
             'branches', 'users', 'bankAccounts', 'products', 'cashRegisters', 'printTemplates', 'services',
         ])->firstOrFail();
@@ -63,12 +60,6 @@ class SubscriptionController extends Controller
                 'services' => $subscription->services_count,
             ],
             'subscriptionStatus' => $subscription->getStatusData(),
-            'plan' => [
-                'name' => $planService->planName(),
-                'is_open_ended' => $planService->isOpenEnded($subscription),
-                'horizon_years' => $planService->horizonYears(),
-                'fixed_limits' => $planService->fixedLimits(),
-            ],
             'pendingPayment' => $subscription->getPendingPayment(),
             'lastRejectedPayment' => $subscription->getLastRejectedPayment(),
             'fiscalDocumentUrl' => $subscription->getFirstMediaUrl('fiscal-documents') ?: null,
@@ -78,9 +69,7 @@ class SubscriptionController extends Controller
     public function update(Request $request)
     {
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         $validated = $request->validate([
             'commercial_name' => 'required|string|max:255',
@@ -113,9 +102,7 @@ class SubscriptionController extends Controller
     public function requestInvoice(SubscriptionPayment $payment)
     {
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         if ($payment->status !== SubscriptionPaymentStatus::APPROVED) {
             abort(403, 'Solo puedes solicitar facturas de pagos aprobados.');
@@ -127,7 +114,6 @@ class SubscriptionController extends Controller
 
         if ($payment->invoice_status === InvoiceStatus::NOT_REQUESTED) {
             $payment->update(['invoice_status' => InvoiceStatus::REQUESTED]);
-
             return redirect()->back()->with('success', 'Factura solicitada. Nos pondremos en contacto pronto.');
         }
 
@@ -141,9 +127,7 @@ class SubscriptionController extends Controller
         ]);
 
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         $subscription = $user->branch->subscription;
         $subscription->clearMediaCollection('fiscal-documents');
@@ -152,54 +136,25 @@ class SubscriptionController extends Controller
         return redirect()->back()->with('success', 'Documento fiscal actualizado con éxito.');
     }
 
-    /**
-     * Activate or deactivate a module on the account's current plan.
-     */
-    public function toggleModule(
-        ToggleSubscriptionModuleRequest $request,
-        ToggleSubscriptionModuleAction $action,
-    ): RedirectResponse {
-        $validated = $request->validated();
-
-        $planItem = $action->execute(
-            $request->user()->branch->subscription,
-            $validated['module_key'],
-            (bool) $validated['is_active'],
-        );
-
-        return redirect()->back()->with(
-            'success',
-            $validated['is_active']
-                ? "El módulo {$planItem->name} se activó."
-                : "El módulo {$planItem->name} se desactivó."
-        );
-    }
-
     public function manage(): Response
     {
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         $subscription = $user->branch->subscription;
         $versionToDisplay = $subscription->versions()->with('items')->latest('id')->first();
 
-        // Descuento acumulado por referidos activos (calculado dinámicamente).
-        // El programa de referidos está desactivado por ahora (config/subscription.php):
-        // el checkout se cobra a precio completo y no muestra ningún descuento.
-        $referralsEnabled = (bool) config('subscription.referrals.enabled');
-        $referrerActiveDiscountPct = $referralsEnabled ? $subscription->getReferrerActiveDiscountPct() : 0.0;
+        // Descuento acumulado por referidos activos (calculado dinámicamente)
+        $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
 
         // Extraer lógica de configuración de versión y modo
         $managementData = $this->getManagementData($subscription, $versionToDisplay);
 
-        $isOwner = ! $user->roles()->exists();
+        $isOwner = !$user->roles()->exists();
         $userBankAccounts = $isOwner ? $subscription->bankAccounts()->get(['bank_accounts.id', 'account_name', 'bank_name']) : $user->bankAccounts()->get(['bank_accounts.id', 'account_name', 'bank_name']);
 
-        // Cupón de referido guardado durante el registro (aún sin pago). Solo se
-        // expone al frontend mientras el programa de referidos esté activo.
-        $pendingReferral = $referralsEnabled ? $subscription->pendingRegistrationReferral() : null;
+        // Cupón de referido guardado durante el registro (aún sin pago).
+        $pendingReferral = $subscription->pendingRegistrationReferral();
 
         return Inertia::render('Subscription/ManageSubscription', array_merge($managementData, [
             'subscription' => $subscription,
@@ -210,7 +165,7 @@ class SubscriptionController extends Controller
             'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
             'pendingReferralCode' => $pendingReferral?->referralCode?->code,
             'pendingReferralDiscountPct' => (float) ($pendingReferral?->referred_discount_pct ?? 0),
-            'ourBankAccounts' => BankAccount::whereHas('branches', fn ($q) => $q->where('branch_id', 1)->where('is_favorite', true))->get(),
+            'ourBankAccounts' => BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', 1)->where('is_favorite', true))->get(),
             'userBankAccounts' => $userBankAccounts,
             'expenseCategories' => ExpenseCategory::where('subscription_id', $subscription->id)->get(['id', 'name']),
         ]));
@@ -220,16 +175,14 @@ class SubscriptionController extends Controller
     {
         try {
             $success = $action->execute($request->user()->branch->subscription);
-
+            
             if ($success) {
                 return redirect()->route('subscription.show')->with('success', 'Tu plan ha sido revertido a la versión anterior.');
             }
-
             return redirect()->back()->with('error', 'No se encontró una versión fallida para revertir.');
 
         } catch (\Exception $e) {
-            Log::error('Error al revertir: '.$e->getMessage());
-
+            Log::error("Error al revertir: " . $e->getMessage());
             return redirect()->back()->with('error', 'No se pudo revertir el plan. Intenta de nuevo.');
         }
     }
@@ -237,9 +190,7 @@ class SubscriptionController extends Controller
     public function processManagement(Request $request, ProcessSubscriptionPaymentAction $action)
     {
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         $validated = $request->validate([
             'billing_period' => ['required', Rule::enum(BillingPeriod::class)],
@@ -264,10 +215,9 @@ class SubscriptionController extends Controller
         try {
             // REFACTOR: El Controller delega todo el trabajo pesado al Action
             $payment = $action->execute($request, $subscription, $validated, PlanItem::where('is_active', true)->get()->keyBy('key'));
-
+            
         } catch (\Exception $e) {
-            Log::error('Error al procesar la suscripción: '.$e->getMessage());
-
+            Log::error("Error al procesar la suscripción: " . $e->getMessage());
             return redirect()->back()->with('error', 'Hubo un error al procesar tu pago. Por favor, intenta de nuevo.');
         }
 
@@ -286,9 +236,7 @@ class SubscriptionController extends Controller
     public function pay(SubscriptionPayment $payment, PlatformMercadoPagoService $mpService): RedirectResponse|HttpResponse
     {
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         if ($payment->payment_method !== 'mercadopago' || $payment->status !== SubscriptionPaymentStatus::PENDING) {
             return redirect()->route('subscription.show')
@@ -315,19 +263,19 @@ class SubscriptionController extends Controller
         try {
             $preference = $mpService->createPreference([
                 'items' => [[
-                    'id' => "sub-{$payment->id}",
-                    'title' => "Suscripción {$subscription->commercial_name}",
+                    'id'          => "sub-{$payment->id}",
+                    'title'       => "Suscripción {$subscription->commercial_name}",
                     'description' => "{$billingPeriodLabel} EzyVentas",
-                    'quantity' => 1,
-                    'unit_price' => (float) $payment->amount,
+                    'quantity'    => 1,
+                    'unit_price'  => (float) $payment->amount,
                 ]],
-                'payer_email' => $subscription->contact_email ?? $user->email,
+                'payer_email'             => $subscription->contact_email ?? $user->email,
                 'subscription_payment_id' => $payment->id,
-                'description' => "Suscripción {$subscription->commercial_name}",
-                'success_url' => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'success']),
-                'failure_url' => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'failure']),
-                'pending_url' => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'pending']),
-                'webhook_url' => route('webhooks.mercadopago'),
+                'description'             => "Suscripción {$subscription->commercial_name}",
+                'success_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'success']),
+                'failure_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'failure']),
+                'pending_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'pending']),
+                'webhook_url'             => route('webhooks.mercadopago'),
             ]);
 
             // Guardar datos de la preferencia de MP en el pago (merge, no sobrescribir)
@@ -339,7 +287,6 @@ class SubscriptionController extends Controller
             return Inertia::location($preference['init_point']);
         } catch (\Exception $e) {
             Log::error('MP subscription preference failed', ['payment_id' => $payment->id, 'error' => $e->getMessage()]);
-
             return redirect()->route('subscription.show')
                 ->with('error', 'No se pudo iniciar el pago con Mercado Pago. Intenta con transferencia bancaria.');
         }
@@ -351,9 +298,7 @@ class SubscriptionController extends Controller
     public function paymentReturn(SubscriptionPayment $payment, Request $request, PlatformMercadoPagoService $mpService, ApproveSubscriptionPaymentAction $approveAction): RedirectResponse
     {
         $user = Auth::user();
-        if ($user->roles()->exists()) {
-            abort(403);
-        }
+        if ($user->roles()->exists()) abort(403);
 
         if ($payment->subscriptionVersion && $payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
             abort(403);
@@ -393,15 +338,15 @@ class SubscriptionController extends Controller
                 }
 
                 Log::warning('MP payment return not approved', [
-                    'payment_id' => $payment->id,
-                    'mp_payment_id' => $mpPaymentId,
-                    'mp_status' => $mpPayment['status'] ?? 'unknown',
+                    'payment_id'     => $payment->id,
+                    'mp_payment_id'  => $mpPaymentId,
+                    'mp_status'      => $mpPayment['status'] ?? 'unknown',
                 ]);
             } catch (\Exception $e) {
                 Log::error('MP payment verification failed', [
-                    'payment_id' => $payment->id,
+                    'payment_id'    => $payment->id,
                     'mp_payment_id' => $mpPaymentId,
-                    'error' => $e->getMessage(),
+                    'error'         => $e->getMessage(),
                 ]);
             }
         }

@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { usePermissions, useSupportWhatsApp } from '@/Composables';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     templates: Array,
@@ -19,11 +19,6 @@ const limitReached = computed(() => {
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
-const { whatsAppUrl } = useSupportWhatsApp();
-
-const increaseLimitUrl = computed(() => whatsAppUrl(
-    'Hola, necesito aumentar el límite de plantillas de mi cuenta en EzyVentas.'
-));
 
 const confirmDelete = (template) => {
     confirm.require({
@@ -179,9 +174,9 @@ const tagPt = {
                         <p class="text-xs text-orange-700 dark:text-orange-300/80 m-0 mt-0.5">Has alcanzado el límite de plantillas personalizadas de tu plan actual.</p>
                     </div>
                 </div>
-                <a v-if="increaseLimitUrl" :href="increaseLimitUrl" target="_blank" rel="noopener noreferrer">
-                    <Button label="Solicitar aumento" icon="pi pi-whatsapp" size="small" severity="success" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
-                </a>
+                <Link :href="route('subscription.manage')">
+                    <Button label="Mejorar plan" size="small" severity="warning" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                </Link>
             </div>
 
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">

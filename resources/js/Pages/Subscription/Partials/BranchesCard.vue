@@ -1,9 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import BranchModal from '@/Components/BranchModal.vue';
-import { useSupportWhatsApp } from '@/Composables';
 
 const props = defineProps({
     subscription: Object,
@@ -13,11 +12,6 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
-const { whatsAppUrl } = useSupportWhatsApp();
-
-const increaseBranchesUrl = computed(() => whatsAppUrl(
-    'Hola, necesito aumentar el número de sucursales de mi cuenta en EzyVentas.'
-));
 
 const isBranchModalVisible = ref(false);
 const selectedBranch = ref(null);
@@ -73,20 +67,11 @@ const tagPt = {
                 </div>
             </div>
             
-            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-                <Button @click="openCreateBranchModal" label="Nueva sucursal" icon="pi pi-plus"
-                    :disabled="branchLimitReached"
-                    severity="primary"
-                    class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold w-full sm:w-auto shadow-sm"
-                    v-tooltip.bottom="branchLimitReached ? 'Límite de sucursales alcanzado' : 'Añadir nueva sucursal'" />
-
-                <a v-if="increaseBranchesUrl" :href="increaseBranchesUrl" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto">
-                    <Button label="Aumentar sucursales" icon="pi pi-whatsapp"
-                        severity="success" outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold w-full sm:w-auto"
-                        v-tooltip.bottom="'Solicita el aumento por WhatsApp'" />
-                </a>
-            </div>
+            <Button @click="openCreateBranchModal" label="Nueva sucursal" icon="pi pi-plus"
+                :disabled="branchLimitReached"
+                severity="primary"
+                class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold w-full sm:w-auto shadow-sm"
+                v-tooltip.bottom="branchLimitReached ? 'Límite de sucursales alcanzado' : 'Añadir nueva sucursal'" />
         </div>
 
         <!-- Tabla -->
