@@ -3,13 +3,16 @@
 namespace App\Providers;
 
 use App\AiTools\EzyVentasToolProvider;
+use App\Listeners\Auth\RecordUserLastLogin;
 use App\Models\Billing\Invoice;
 use App\Models\Billing\StampMovement;
 use App\Models\Billing\StampPurchase;
 use App\Observers\Billing\StampMovementObserver;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -93,5 +96,10 @@ class AppServiceProvider extends ServiceProvider
         // ── Stamp Movement Observer ──
         StampPurchase::observe(StampMovementObserver::class);
         Invoice::observe(StampMovementObserver::class);
+
+        // ── Account lifecycle ──
+        // Every sign-in feeds users.last_login_at; the inactivity purge is
+        // scheduled in routes/console.php.
+        Event::listen(Login::class, RecordUserLastLogin::class);
     }
 }

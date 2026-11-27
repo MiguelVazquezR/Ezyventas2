@@ -99,7 +99,7 @@ const tagPt = {
 
                 <!-- CONTACTO TEMPORAL -->
                 <li v-if="!transaction.customer && transaction.contact_info" class="flex flex-col border-b border-gray-100 dark:border-[#2a2a2a] pb-4">
-                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Datos de Contacto (Invitado)</span>
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Datos de Contacto</span>
                     
                     <div class="flex flex-col gap-2">
                         <div class="flex items-center gap-3">

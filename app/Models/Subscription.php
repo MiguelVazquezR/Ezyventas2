@@ -33,6 +33,8 @@ class Subscription extends Model implements HasMedia
         'address',
         'slug',
         'onboarding_completed_at',
+        'inactivity_warned_at',
+        'data_purged_at',
         'referrer_discount_active',
         // LEGACY: la facturación se deriva del módulo module_billing (billingEnabled()).
         // Columna conservada por compatibilidad; ya no se usa como gate.
@@ -42,6 +44,8 @@ class Subscription extends Model implements HasMedia
     protected $casts = [
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
+        'inactivity_warned_at' => 'datetime',
+        'data_purged_at' => 'datetime',
         'referrer_discount_active' => 'boolean',
         'facturacion_habilitada' => 'boolean', // LEGACY — ya no se usa como gate (ver billingEnabled())
         'status' => SubscriptionStatus::class,

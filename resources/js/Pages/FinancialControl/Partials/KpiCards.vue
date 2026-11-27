@@ -1,6 +1,7 @@
 <script setup>
 const props = defineProps({
-    kpis: Object
+    kpis: Object,
+    comparisonLabel: { type: String, default: 'periodo anterior' },
 });
 
 const emit = defineEmits(['open-sales', 'open-payments', 'open-expenses']);
@@ -32,7 +33,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">({{ formatCurrency(kpis.sales.monetary_change) }})</span> 
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.sales.previous) }} periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.sales.previous) }} del {{ comparisonLabel }}</p>
             </div>
         </div>
 
@@ -56,7 +57,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">({{ formatCurrency(kpis.payments.monetary_change) }})</span> 
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.payments.previous) }} periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.payments.previous) }} del {{ comparisonLabel }}</p>
             </div>
         </div>
 
@@ -83,7 +84,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">({{ formatCurrency(kpis.expenses.monetary_change) }})</span> 
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.expenses.previous) }} periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.expenses.previous) }} del {{ comparisonLabel }}</p>
             </div>
         </div>
 
@@ -112,7 +113,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">({{ formatCurrency(kpis.netProfit.monetary_change) }})</span> 
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.netProfit.previous) }} periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.netProfit.previous) }} del {{ comparisonLabel }}</p>
             </div>
         </div>
 
@@ -141,7 +142,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">({{ formatCurrency(kpis.profit.monetary_change) }})</span> 
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.profit.previous) }} periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.profit.previous) }} del {{ comparisonLabel }}</p>
             </div>
         </div>
 
@@ -165,7 +166,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">({{ formatCurrency(kpis.averageTicket.monetary_change) }})</span>
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.averageTicket.previous) }} periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ formatCurrency(kpis.averageTicket.previous) }} del {{ comparisonLabel }}</p>
             </div>
         </div>
         
@@ -174,7 +175,7 @@ const formatCurrency = (value) => {
             <div class="flex items-start justify-between mb-6">
                 <div>
                     <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Margen de utilidad</h2>
-                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Porcentaje de ganancia</p>
+                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Ganancia del negocio / ventas</p>
                 </div>
                 <div class="w-10 h-10 rounded-full bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center flex-shrink-0 border border-orange-100 dark:border-orange-900/30">
                     <i class="pi pi-percentage !text-sm text-orange-500"></i>
@@ -184,6 +185,9 @@ const formatCurrency = (value) => {
                 <p class="text-4xl lg:text-5xl font-light tracking-tight m-0" :class="kpis.utilityMargin.current >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-500'">
                     {{ kpis.utilityMargin.current }}%
                 </p>
+                <p v-if="kpis.utilityMargin.allCurrent !== undefined" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 m-0">
+                    {{ kpis.utilityMargin.allCurrent }}% <span class="text-[10px] uppercase tracking-widest text-gray-400">total (incluye gastos externos)</span>
+                </p>
                 <div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a]">
                     <div class="flex items-center gap-1" :class="kpis.utilityMargin.change >= 0 ? 'text-green-500' : 'text-red-500'">
                         <span class="w-1.5 h-1.5 rounded-full" :class="kpis.utilityMargin.change >= 0 ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]'"></span>
@@ -191,7 +195,7 @@ const formatCurrency = (value) => {
                     </div>
                     <span class="text-[10px] text-gray-500 uppercase tracking-widest">(puntos)</span>
                 </div>
-                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ kpis.utilityMargin.previous }}% periodo ant.</p>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest mt-1 m-0">vs {{ kpis.utilityMargin.previous }}% del {{ comparisonLabel }}</p>
             </div>
         </div>
     </div>

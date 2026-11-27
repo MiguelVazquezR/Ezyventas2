@@ -381,6 +381,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                 <div class="hidden lg:flex items-center space-x-10 text-gray-500 font-medium text-[0.95rem] tracking-wide">
                     <button @click="scrollToElement('features')" class="hover:text-[#F68C0F] transition duration-200">Funcionalidades</button>
                     <button @click="scrollToElement('prices')" class="hover:text-[#F68C0F] transition duration-200">Precios</button>
+                    <button @click="scrollToElement('app-movil')" class="hover:text-[#F68C0F] transition duration-200">App móvil</button>
                     <button @click="scrollToElement('faq')" class="hover:text-[#F68C0F] transition duration-200">Preguntas frecuentes</button>
                     <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="hover:text-[#F68C0F] transition duration-200">Contacto</a>
                 </div>
@@ -825,6 +826,59 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     </div>
                 </div>
 
+            </section>
+
+            <!-- SECCIÓN: APP MÓVIL ANDROID -->
+            <section id="app-movil" class="py-20 md:py-28 px-6 md:px-12 max-w-[1400px] mx-auto">
+                <div class="relative rounded-[40px] bg-[#1a1a1a] overflow-hidden" data-aos="fade-up">
+                    <div class="absolute -top-40 -right-24 w-[460px] h-[460px] bg-[#F68C0F] opacity-20 blur-[130px] rounded-full pointer-events-none"></div>
+
+                    <div class="relative z-10 flex flex-col lg:flex-row items-center gap-10 lg:gap-16 px-6 py-12 md:px-16 md:py-16">
+                        <div class="flex-1 space-y-5 text-center lg:text-left">
+                            <span class="inline-flex items-center gap-2 bg-white/5 border border-white/10 text-white px-4 py-2 rounded-full text-[11px] font-bold uppercase tracking-widest">
+                                <i class="pi pi-android !text-xs text-[#F68C0F]"></i>
+                                App móvil Android
+                            </span>
+
+                            <h2 class="text-3xl md:text-5xl font-bold text-white tracking-tight leading-tight m-0">Tu punto de venta, en el bolsillo</h2>
+
+                            <p class="text-gray-400 text-base md:text-lg leading-relaxed max-w-2xl">Instala Ezy Ventas en tu celular Android y vende, consulta tu inventario y revisa tus cortes de caja desde donde estés, siempre sincronizado con el resto de tus dispositivos.</p>
+
+                            <ul class="space-y-3 max-w-xl mx-auto lg:mx-0 text-left list-none">
+                                <li class="flex items-center gap-3 text-gray-300">
+                                    <span class="w-6 h-6 rounded-full bg-[#F68C0F]/15 text-[#F68C0F] flex items-center justify-center shrink-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
+                                    </span>
+                                    Cobra desde el celular con lector de código de barras
+                                </li>
+                                <li class="flex items-center gap-3 text-gray-300">
+                                    <span class="w-6 h-6 rounded-full bg-[#F68C0F]/15 text-[#F68C0F] flex items-center justify-center shrink-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
+                                    </span>
+                                    Consulta productos, precios y existencias al instante
+                                </li>
+                                <li class="flex items-center gap-3 text-gray-300">
+                                    <span class="w-6 h-6 rounded-full bg-[#F68C0F]/15 text-[#F68C0F] flex items-center justify-center shrink-0">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
+                                    </span>
+                                    Revisa tus ventas y cortes de caja del día en tiempo real
+                                </li>
+                            </ul>
+
+                            <div class="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start pt-2">
+                                <Link :href="route('app.download')" class="px-8 py-4 rounded-full bg-[#F68C0F] text-white font-bold shadow-[0_15px_35px_-10px_rgba(246,140,15,0.6)] hover:bg-[#ff9e3d] hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 w-full sm:w-auto">
+                                    Descargar app para Android
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v13.5m0 0 5.25-5.25M12 16.5 6.75 11.25M4.5 20.25h15" /></svg>
+                                </Link>
+                                <span class="text-gray-500 text-sm">Muy pronto disponible en Google Play.</span>
+                            </div>
+                        </div>
+                        <!-- Mockup del teléfono -->
+                        <div class="w-full lg:w-[340px] flex justify-center">
+                            <img src="/imagesLanding/hero-phone.webp" alt="Ezy Ventas en tu celular" loading="lazy" decoding="async" class="w-full max-w-[300px] object-contain drop-shadow-2xl">
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- SECCIÓN 5: PREGUNTAS FRECUENTES -->

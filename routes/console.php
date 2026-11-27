@@ -16,3 +16,11 @@ Schedule::job(new \App\Jobs\Billing\RefreshPendingCancelationsJob)->hourly();
 
 // Fase 3: preventive alerts (low stamp balance, CSD about to expire).
 Schedule::job(new \App\Jobs\Billing\CheckPreventiveAlertsJob)->dailyAt('08:00');
+
+// Account hibernation: warn the owner 7 days before the purge, then delete the
+// business data of accounts without sign-ins for 90 days. Both jobs also check
+// account_lifecycle.inactivity.enabled before doing anything.
+if (config('account_lifecycle.inactivity.enabled')) {
+    Schedule::job(new \App\Jobs\Lifecycle\SendAccountLifecycleWarningsJob)->dailyAt('09:00');
+    Schedule::job(new \App\Jobs\Lifecycle\PurgeInactiveAccountsJob)->dailyAt('09:30');
+}

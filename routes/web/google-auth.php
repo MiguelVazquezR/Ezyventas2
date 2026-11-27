@@ -73,7 +73,7 @@ Route::get('/auth/google/callback', function () {
             // --- FIN DE LA CORRECCIÓN ---
             
             // Instanciamos y llamamos a la acción de crear usuario
-            $creator = new CreateNewUser();
+            $creator = app(CreateNewUser::class);
             
             // create() ejecutará TODA la lógica de CreateNewUser.php
             // (crear Suscripción, Sucursal, Usuario, Plan, etc.)

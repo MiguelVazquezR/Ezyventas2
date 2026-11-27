@@ -36,6 +36,15 @@ class Service extends Model implements HasMedia
         'show_online' => 'boolean',
     ];
 
+    /**
+     * The catalog keeps a single image per service: uploading a new one replaces
+     * the previous file instead of accumulating duplicates.
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('service-image')->singleFile();
+    }
+
     // Configuración para el historial
     public function getActivitylogOptions(): LogOptions
     {

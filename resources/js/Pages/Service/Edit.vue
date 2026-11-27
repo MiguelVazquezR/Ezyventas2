@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -41,12 +41,69 @@ const form = useForm({
     duration_estimate: props.service.duration_estimate,
     show_online: props.service.show_online,
     image: null,
+    remove_image: false,
     sat_product_code: props.service.sat_product_code || '',
     sat_unit_code: props.service.sat_unit_code || '',
     branch_ids: props.service.branches.map(b => b.id),
 
     has_variants: initialHasVariants,
     variants: initVariants(),
+});
+
+// --- IMAGE HANDLING ---
+// The stored image is kept unless the user replaces it with a new file or
+// explicitly removes it from this form.
+const storedImageUrl = computed(() =>
+    props.service.media && props.service.media.length > 0 ? props.service.media[0].original_url : null
+);
+
+const newImagePreviewUrl = ref(null);
+const fileUploadKey = ref(0);
+
+const displayedImageUrl = computed(() => {
+    if (newImagePreviewUrl.value) return newImagePreviewUrl.value;
+
+    return form.remove_image ? null : storedImageUrl.value;
+});
+
+const onImageSelect = (event) => {
+    const file = event.files?.[0] ?? null;
+
+    form.image = file;
+    form.remove_image = false;
+
+    if (newImagePreviewUrl.value) {
+        URL.revokeObjectURL(newImagePreviewUrl.value);
+    }
+
+    newImagePreviewUrl.value = file ? URL.createObjectURL(file) : null;
+};
+
+const discardSelectedImage = () => {
+    form.image = null;
+
+    if (newImagePreviewUrl.value) {
+        URL.revokeObjectURL(newImagePreviewUrl.value);
+        newImagePreviewUrl.value = null;
+    }
+
+    // Remount the uploader so PrimeVue clears its internal file list.
+    fileUploadKey.value += 1;
+};
+
+const removeStoredImage = () => {
+    discardSelectedImage();
+    form.remove_image = true;
+};
+
+const undoImageRemoval = () => {
+    form.remove_image = false;
+};
+
+onBeforeUnmount(() => {
+    if (newImagePreviewUrl.value) {
+        URL.revokeObjectURL(newImagePreviewUrl.value);
+    }
 });
 
 // --- LÓGICA DE CATEGORÍAS ---
@@ -328,12 +385,47 @@ const submit = () => {
                 <!-- Imagen -->
                 <div class="md:col-span-2 mt-4">
                     <InputLabel value="Imagen del servicio" />
-                    <FileUpload @select="form.image = $event.files[0]" :auto="true" :customUpload="true"
-                        accept="image/*" :show-upload-button="false" :show-cancel-button="false">
-                        <template #empty>
-                            <p>Arrastra y suelta una imagen aquí.</p>
-                        </template>
-                    </FileUpload>
+
+                    <div class="flex flex-col gap-3 mt-2">
+                        <div v-if="displayedImageUrl"
+                            class="flex items-center gap-4 p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] w-max max-w-full">
+                            <img :src="displayedImageUrl" alt="Imagen del servicio"
+                                class="h-20 w-20 object-cover rounded-xl border border-gray-100 dark:border-[#3a3a3a]" />
+                            <div class="flex flex-col items-start gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">
+                                    {{ form.image ? 'Nueva imagen' : 'Imagen actual' }}
+                                </span>
+                                <Button v-if="form.image" type="button" label="Descartar" icon="pi pi-times"
+                                    severity="secondary" text size="small" class="!rounded-full"
+                                    @click="discardSelectedImage" />
+                                <Button v-else type="button" label="Quitar imagen" icon="pi pi-trash" severity="danger"
+                                    text size="small" class="!rounded-full" @click="removeStoredImage" />
+                            </div>
+                        </div>
+
+                        <div v-if="form.remove_image"
+                            class="flex flex-wrap items-center gap-3 p-3 rounded-2xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20">
+                            <i class="pi pi-exclamation-triangle !text-sm text-amber-600 dark:text-amber-400"></i>
+                            <p class="text-xs text-amber-700 dark:text-amber-300 m-0 flex-1 min-w-0">
+                                La imagen se eliminará al guardar los cambios.
+                            </p>
+                            <Button type="button" label="Deshacer" severity="secondary" text size="small"
+                                class="!rounded-full" @click="undoImageRemoval" />
+                        </div>
+
+                        <FileUpload :key="fileUploadKey" @select="onImageSelect" :auto="true" :customUpload="true"
+                            accept="image/*" :show-upload-button="false" :show-cancel-button="false" :pt="{
+                                root: { class: '!rounded-2xl !border !border-gray-100 dark:!border-[#3a3a3a] !bg-gray-50 dark:!bg-[#1a1a1a]' }
+                            }">
+                            <template #empty>
+                                <p class="m-0 text-sm text-gray-500">
+                                    {{ displayedImageUrl ? 'Arrastra y suelta una imagen para reemplazarla.' : 'Arrastra y suelta una imagen aquí o haz clic para seleccionar.' }}
+                                </p>
+                            </template>
+                        </FileUpload>
+
+                        <InputError :message="form.errors.image" />
+                    </div>
                 </div>
             </div>
             <div class="flex justify-end mt-8 pt-4 border-t dark:border-gray-700">

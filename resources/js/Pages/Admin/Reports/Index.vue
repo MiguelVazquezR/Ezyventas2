@@ -297,7 +297,7 @@ const datePickerPt = {
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 mt-1">Ingreso bruto vs neto del periodo</p>
                     </div>
 
-                    <!-- KPI 8: Premios por referidos -->
+                    <!-- KPI 8: Premios por referidores -->
                     <div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
                         <div class="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                             <i class="pi pi-dollar !text-6xl text-amber-500"></i>

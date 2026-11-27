@@ -3,3 +3,4 @@
 
 export * from './usePermissions';
 export * from './useSatCatalogs';
+export * from './useSupportWhatsApp';

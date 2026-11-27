@@ -189,6 +189,12 @@ const adminModel = ref([
                 routeName: 'admin.reports.*'
             },
             {
+                label: 'Visitas',
+                icon: 'pi pi-eye',
+                to: route('admin.visits.index'),
+                routeName: 'admin.visits.*'
+            },
+            {
                 label: 'Pagos pendientes',
                 icon: 'pi pi-clock',
                 to: route('admin.payments.index'),
@@ -253,6 +259,12 @@ const adminModel = ref([
                 icon: 'pi pi-play-circle',
                 to: route('admin.tutorials.index'),
                 routeName: 'admin.tutorials.*'
+            },
+            {
+                label: 'Guías de ayuda',
+                icon: 'pi pi-book',
+                to: route('admin.help-articles.index'),
+                routeName: 'admin.help-articles.*'
             },
             {
                 label: 'Referidos',

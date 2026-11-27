@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday, format } from 'date-fns';
@@ -23,11 +23,13 @@ const props = defineProps({
     bankAccounts: Array,
     allBankAccounts: Array,
     filters: Object,
+    comparison: Object,
 });
 
 // --- STATE ---
 const dates = ref();
 const selectedRange = ref('day');
+const isInitializing = ref(true);
 const mainChartOptions = ref();
 const isExporting = ref(false);
 
@@ -88,7 +90,11 @@ const setDateRange = (period) => {
     }
     dates.value = [startDate, endDate];
 };
-watch(selectedRange, (newPeriod) => { if (newPeriod !== 'custom') { setDateRange(newPeriod); } });
+watch(selectedRange, (newPeriod) => {
+    if (!isInitializing.value && newPeriod !== 'custom') {
+        setDateRange(newPeriod);
+    }
+});
 
 // --- LÓGICA DE DATOS ---
 const fetchData = () => {
@@ -96,10 +102,12 @@ const fetchData = () => {
         router.get(route('financial-control.index'), {
             start_date: format(dates.value[0], 'yyyy-MM-dd'),
             end_date: format(dates.value[1], 'yyyy-MM-dd'),
+            range: selectedRange.value,
         }, { preserveState: true, replace: true, });
     }
 };
 watch(dates, (newDates, oldDates) => {
+    if (isInitializing.value) { return; }
     if (newDates && newDates[0] && newDates[1]) {
         if (!oldDates || !isSameDay(newDates[0], oldDates[0]) || !isSameDay(newDates[1], oldDates[1])) { fetchData(); }
     }
@@ -111,8 +119,8 @@ const barChartData = computed(() => ({
     datasets: [
         { label: 'Ventas totales', data: props.chartData.sales, backgroundColor: '#a78bfa', borderRadius: 4 },
         { label: 'Total de pagos', data: props.chartData.payments, backgroundColor: '#7dd3fc', borderRadius: 4 },
-        { label: 'Total de gastos', data: props.chartData.expenses, backgroundColor: '#fcd34d', borderRadius: 4 },
-        { label: 'Flujo de dinero', data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]), backgroundColor: '#1FAE07', borderRadius: 4 },
+        { label: 'Gastos del negocio', data: props.chartData.expenses, backgroundColor: '#fcd34d', borderRadius: 4 },
+        { label: 'Flujo del negocio', data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]), backgroundColor: '#1FAE07', borderRadius: 4 },
     ]
 }));
 
@@ -126,6 +134,8 @@ onMounted(() => {
     else if (isSameDay(initialStartDate, startOfMonth(initialStartDate)) && isSameDay(initialEndDate, endOfMonth(initialStartDate))) { selectedRange.value = 'month'; }
     else if (isSameDay(initialStartDate, startOfYear(initialStartDate)) && isSameDay(initialEndDate, endOfYear(initialStartDate))) { selectedRange.value = 'year'; }
     else { selectedRange.value = 'custom'; }
+
+    nextTick(() => { isInitializing.value = false; });
     
     const textColor = '#6b7280'; 
     const gridColor = '#3a3a3a'; // Adaptado al sistema oscuro Tesla UI
@@ -139,6 +149,7 @@ onMounted(() => {
 
 // --- HELPERS ESTATICOS LOCALES ---
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+const formatHumanDate = (value) => format(new Date(value.replace(/-/g, '/')), 'dd/MM/yyyy');
 
 const getPaymentMethodDetails = (method) => {
     const details = {
@@ -146,6 +157,7 @@ const getPaymentMethodDetails = (method) => {
         tarjeta: { name: 'Tarjeta', icon: 'pi pi-credit-card', color: 'bg-blue-500', textColor: 'text-blue-500' },
         transferencia: { name: 'Transferencia', icon: 'pi pi-arrows-h', color: 'bg-orange-400', textColor: 'text-orange-400' },
         saldo: { name: 'Saldo a favor', icon: 'pi pi-wallet', color: 'bg-purple-500', textColor: 'text-purple-500' },
+        intercambio: { name: 'Intercambio', icon: 'pi pi-refresh', color: 'bg-gray-500', textColor: 'text-gray-500' },
         default: { name: method || 'Otro', icon: 'pi pi-question-circle', color: 'bg-gray-500', textColor: 'text-gray-500' }
     };
     return details[method] || details.default;
@@ -189,6 +201,10 @@ const getExpenseCategoryIcon = (categoryName) => {
                         <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
                         Métricas operativas y flujos
                     </p>
+                    <p class="text-[10px] uppercase tracking-widest text-gray-400 mt-1 m-0">
+                        Periodo: {{ formatHumanDate(filters.startDate) }} – {{ formatHumanDate(filters.endDate) }}
+                        · Comparación: {{ comparison.label }} ({{ formatHumanDate(comparison.start_date) }} – {{ formatHumanDate(comparison.end_date) }})
+                    </p>
                 </div>
                 
                 <div class="flex items-center gap-3 flex-wrap bg-white dark:bg-[#232323] p-2 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] shadow-sm">
@@ -214,6 +230,7 @@ const getExpenseCategoryIcon = (categoryName) => {
             <!-- COMPONENTE: KPIs -->
             <KpiCards 
                 :kpis="kpis" 
+                :comparison-label="comparison.label"
                 @open-sales="isSalesModalVisible = true"
                 @open-payments="isPaymentsModalVisible = true"
                 @open-expenses="isAllExpensesModalVisible = true"
@@ -222,7 +239,10 @@ const getExpenseCategoryIcon = (categoryName) => {
             <!-- Gráfica Principal -->
             <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                 <div class="mb-6 flex justify-between items-center">
-                    <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Resumen comparativo de operaciones</h2>
+                    <div>
+                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Resumen comparativo de operaciones</h2>
+                        <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Ventas, cobros y gastos del negocio. Los gastos externos no se incluyen.</p>
+                    </div>
                     <i class="pi pi-chart-bar text-gray-400 !text-sm"></i>
                 </div>
                 <div class="h-[400px]">
@@ -238,7 +258,7 @@ const getExpenseCategoryIcon = (categoryName) => {
                     <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                         <div class="mb-6">
                             <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Métodos de pago</h2>
-                            <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Distribución de ingresos por tipo</p>
+                            <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Distribución de ingresos por tipo. Incluye saldo a favor e intercambio.</p>
                         </div>
                         
                         <div v-if="paymentMethods.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">

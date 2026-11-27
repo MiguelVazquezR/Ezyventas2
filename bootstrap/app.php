@@ -33,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'resolve.store' => \App\Http\Middleware\ResolveStore::class,
+            'track.visit' => \App\Http\Middleware\TrackSiteVisit::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

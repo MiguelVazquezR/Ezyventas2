@@ -99,16 +99,29 @@ Pre-launch email capture on the landing page. Simple: validate email uniqueness,
 
 ---
 
-## 5. Help Center
+## 5. Help Center ("Centro de ayuda")
 
 ### Key Files
 | File | Role |
 |---|---|
-| `Pages/HelpCenter.vue` | Help center page |
-| `routes/web.php` | `GET /centro-ayuda` → `help-center` route |
+| `routes/web/help-center.php` | `GET /centro-ayuda` and `GET /centro-ayuda/{module}` routes |
+| `app/Http/Controllers/HelpCenterController.php` | Subscriber landing page and module detail |
+| `app/Services/HelpCenter/HelpCenterContentService.php` | Modules with published guides + active videos |
+| `app/Models/HelpArticle.php` | Written guide (`help_center_articles` table) |
+| `resources/js/Pages/HelpCenter/Index.vue` | Module grid with search |
+| `resources/js/Pages/HelpCenter/Show.vue` | Guides plus videos of one module |
+| `resources/js/Pages/Admin/HelpCenter/Index.vue` | Admin panel for the written guides |
+| `app/Http/Controllers/Admin/AdminHelpArticleController.php` | Admin CRUD, reorder and publish toggle |
 
 ### What It Does
-Static help center page. Route: `GET /centro-ayuda` renders `HelpCenter.vue`.
+Authenticated help center reachable from the topbar ("Centro de ayuda") and from the
+support modal. Each module (keys from `config/tutorials.php`) shows its written guides
+(HTML, `help_center_articles`) next to its active videos (`tutorial_videos`). Modules
+without published content are hidden from the landing page.
+
+Guides are authored in Admin → Centro de ayuda, grouped by module, ordered with
+`sort_order` and published/unpublished per article. The legacy static `Pages/HelpCenter.vue`
+is no longer routed.
 
 ---
 

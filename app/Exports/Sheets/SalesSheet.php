@@ -3,6 +3,8 @@
 namespace App\Exports\Sheets;
 
 use App\Models\Transaction;
+use App\Enums\PaymentStatus;
+use App\Enums\TransactionStatus;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithColumnFormatting;
@@ -34,6 +36,7 @@ class SalesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, Sho
             ->where('branch_id', $this->branchId)
             ->where('channel', $this->channel)
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED, TransactionStatus::CHANGED])
             ->with(['customer', 'user', 'items', 'payments']);
     }
 
@@ -71,7 +74,9 @@ class SalesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, Sho
 
     public function map($transaction): array
     {
-        $totalPaid = $transaction->payments->sum('amount');
+        $totalPaid = $transaction->payments
+            ->filter(fn ($payment) => $payment->status === PaymentStatus::COMPLETED)
+            ->sum('amount');
         $pendingAmount = $transaction->total - $totalPaid;
         $paymentMethods = $transaction->payments->pluck('payment_method.value')->unique()->implode(', ');
         $items = $transaction->items->map(function ($item) {

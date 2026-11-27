@@ -69,6 +69,14 @@ class HandleInertiaRequests extends Middleware
             // Evaluamos notificaciones delegadas al modelo User de forma perezosa (lazy evaluation)
             'notifications' => fn() => $request->user() ? $request->user()->getGlobalNotifications() : null,
 
+            // Support channels declared in config/support.php, shared so no view
+            // hardcodes the WhatsApp number or the contact email.
+            'support' => fn() => [
+                'email' => $this->supportChannel('email')['value'] ?? null,
+                'whatsapp_url' => $this->supportChannel('whatsapp')['url'] ?? null,
+                'whatsapp_label' => $this->supportChannel('whatsapp')['value'] ?? null,
+            ],
+
             // Notificaciones del sistema de referidos (para badge en topbar)
             'referralNotifications' => function () use ($request) {
                 $user = $request->user();
@@ -124,5 +132,15 @@ class HandleInertiaRequests extends Middleware
             'joinableSessions' => fn() => $request->user()?->getJoinableCashRegisterSessions() ?? [],
             'availableCashRegisters' => fn() => $request->user()?->getAvailableCashRegisters() ?? []
         ]);
+    }
+
+    /**
+     * Support channel declared in config/support.php for the given type.
+     *
+     * @return array<string, string>|null
+     */
+    private function supportChannel(string $type): ?array
+    {
+        return collect(config('support.channels'))->firstWhere('type', $type);
     }
 }

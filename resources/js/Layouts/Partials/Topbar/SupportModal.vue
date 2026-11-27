@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue';
+import { Link, usePage } from '@inertiajs/vue3';
 import AppLogo from '@/Components/AuthenticationCardLogo.vue';
 
 defineProps({
@@ -6,6 +8,15 @@ defineProps({
 });
 
 const emit = defineEmits(['update:visible']);
+
+// Support channels come from config/support.php through HandleInertiaRequests,
+// so the number and the address live in a single place.
+const support = computed(() => usePage().props.support ?? {});
+
+const emailAddress = computed(() => support.value.email ?? null);
+const emailUrl = computed(() => (emailAddress.value ? `mailto:${emailAddress.value}` : '#'));
+const whatsappUrl = computed(() => support.value.whatsapp_url ?? '#');
+const whatsappLabel = computed(() => support.value.whatsapp_label ?? 'WhatsApp');
 
 // --- Tesla UI Dialog PT ---
 const dialogPt = {
@@ -66,7 +77,7 @@ const dialogPt = {
             <div class="w-full space-y-3">
                 <!-- Email -->
                 <a
-                    href="mailto:notificaciones@ezyventas.com"
+                    :href="emailUrl"
                     class="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors no-underline group"
                 >
                     <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-500/20 transition-colors">
@@ -74,14 +85,14 @@ const dialogPt = {
                     </div>
                     <div class="flex flex-col min-w-0">
                         <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Correo electrónico</span>
-                        <span class="text-sm text-blue-600 dark:text-blue-400 font-medium truncate">notificaciones@ezyventas.com</span>
+                        <span class="text-sm text-blue-600 dark:text-blue-400 font-medium truncate">{{ emailAddress }}</span>
                     </div>
                     <i class="pi pi-arrow-up-right !text-xs text-gray-400 ml-auto flex-shrink-0"></i>
                 </a>
 
                 <!-- WhatsApp -->
                 <a
-                    href="https://wa.me/5213321705650"
+                    :href="whatsappUrl"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] hover:bg-green-50 dark:hover:bg-green-500/10 transition-colors no-underline group"
@@ -91,10 +102,26 @@ const dialogPt = {
                     </div>
                     <div class="flex flex-col min-w-0">
                         <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">WhatsApp</span>
-                        <span class="text-sm text-green-600 dark:text-green-400 font-medium">+52 33 2170 5650</span>
+                        <span class="text-sm text-green-600 dark:text-green-400 font-medium">{{ whatsappLabel }}</span>
                     </div>
                     <i class="pi pi-arrow-up-right !text-xs text-gray-400 ml-auto flex-shrink-0"></i>
                 </a>
+
+                <!-- Centro de ayuda -->
+                <Link
+                    :href="route('help-center.index')"
+                    class="flex items-center gap-3 p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] hover:bg-primary-50 dark:hover:bg-primary-500/10 transition-colors no-underline group"
+                    @click="emit('update:visible', false)"
+                >
+                    <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary-500/20 transition-colors">
+                        <i class="pi pi-book text-primary-500 !text-lg"></i>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Centro de ayuda</span>
+                        <span class="text-sm text-primary-600 dark:text-primary-400 font-medium">Guías y videotutoriales</span>
+                    </div>
+                    <i class="pi pi-arrow-right !text-xs text-gray-400 ml-auto flex-shrink-0"></i>
+                </Link>
             </div>
         </div>
     </Dialog>

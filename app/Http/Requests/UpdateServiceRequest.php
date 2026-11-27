@@ -19,7 +19,8 @@ class UpdateServiceRequest extends FormRequest
             'description' => 'nullable|string',
             'category_id' => 'required|exists:categories,id',
             'show_online' => 'boolean',
-            'image' => 'nullable|image',
+            'image' => 'nullable|image|max:10240',
+            'remove_image' => 'nullable|boolean',
             'sat_product_code' => 'nullable|string|max:8',
             'sat_unit_code' => 'nullable|string|max:10',
 
@@ -39,6 +40,14 @@ class UpdateServiceRequest extends FormRequest
             'variants.*.name' => 'required_with:variants|string|max:255',
             'variants.*.price' => 'required_with:variants|numeric|min:0',
             'variants.*.duration_estimate' => 'nullable|string|max:255',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'image.image' => 'La imagen debe ser un archivo de imagen válido.',
+            'image.max' => 'La imagen no debe superar los 10 MB.',
         ];
     }
 }

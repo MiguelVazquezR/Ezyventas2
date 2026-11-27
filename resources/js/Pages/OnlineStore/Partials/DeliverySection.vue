@@ -75,15 +75,15 @@ defineProps({
                 <div class="grid grid-cols-3 gap-3">
                     <div class="flex flex-col gap-1">
                         <span class="text-[9px] text-gray-400">Días</span>
-                        <InputNumber v-model="form.prep_days" :min="0" :max="30" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
+                        <InputNumber fluid v-model="form.prep_days" :min="0" :max="30" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
                     </div>
                     <div class="flex flex-col gap-1">
                         <span class="text-[9px] text-gray-400">Horas</span>
-                        <InputNumber v-model="form.prep_hours" :min="0" :max="23" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
+                        <InputNumber fluid v-model="form.prep_hours" :min="0" :max="23" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
                     </div>
                     <div class="flex flex-col gap-1">
                         <span class="text-[9px] text-gray-400">Minutos</span>
-                        <InputNumber v-model="form.prep_minutes" :min="0" :max="59" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
+                        <InputNumber fluid v-model="form.prep_minutes" :min="0" :max="59" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
                     </div>
                 </div>
                 <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">

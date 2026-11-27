@@ -4,8 +4,12 @@ namespace Tests\Feature;
 
 use App\Enums\ExpenseStatus;
 use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
+use App\Enums\TransactionStatus;
 use App\Models\Branch;
 use App\Models\Expense;
+use App\Models\Payment;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Services\FinancialReportService;
 use Carbon\Carbon;
@@ -108,5 +112,63 @@ class FinancialReportServiceTest extends TestCase
 
         $this->assertEqualsWithDelta((float) $expectedInternal, $internalTotal, 0.01);
         $this->assertEqualsWithDelta((float) $expectedExternal, $externalTotal, 0.01);
+    }
+
+    #[Test]
+    public function detailed_payments_include_balance_and_exclude_invalid_transactions(): void
+    {
+        $validTransaction = Transaction::factory()->create([
+            'branch_id' => $this->branch->id,
+            'status' => TransactionStatus::COMPLETED,
+            'created_at' => Carbon::today(),
+        ]);
+
+        $cancelledTransaction = Transaction::factory()->create([
+            'branch_id' => $this->branch->id,
+            'status' => TransactionStatus::CANCELLED,
+            'created_at' => Carbon::today(),
+        ]);
+
+        $refundedTransaction = Transaction::factory()->create([
+            'branch_id' => $this->branch->id,
+            'status' => TransactionStatus::REFUNDED,
+            'created_at' => Carbon::today(),
+        ]);
+
+        Payment::factory()->create([
+            'transaction_id' => $validTransaction->id,
+            'payment_method' => PaymentMethod::BALANCE,
+            'payment_date' => Carbon::today(),
+            'status' => PaymentStatus::COMPLETED,
+            'amount' => 50.00,
+        ]);
+
+        Payment::factory()->create([
+            'transaction_id' => $cancelledTransaction->id,
+            'payment_method' => PaymentMethod::CASH,
+            'payment_date' => Carbon::today(),
+            'status' => PaymentStatus::COMPLETED,
+            'amount' => 30.00,
+        ]);
+
+        Payment::factory()->create([
+            'transaction_id' => $refundedTransaction->id,
+            'payment_method' => PaymentMethod::CARD,
+            'payment_date' => Carbon::today(),
+            'status' => PaymentStatus::COMPLETED,
+            'amount' => 20.00,
+        ]);
+
+        $service = new FinancialReportService(
+            $this->branch->id,
+            Carbon::today()->startOfDay(),
+            Carbon::today()->endOfDay(),
+        );
+
+        $detailedPayments = $service->getDetailedPayments();
+
+        $this->assertCount(1, $detailedPayments);
+        $this->assertSame(PaymentMethod::BALANCE->value, $detailedPayments->first()->payment_method->value);
+        $this->assertSame($validTransaction->id, $detailedPayments->first()->transaction_id);
     }
 }

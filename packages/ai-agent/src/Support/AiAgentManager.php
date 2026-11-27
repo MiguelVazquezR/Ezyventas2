@@ -192,6 +192,7 @@ class AiAgentManager
             . 'You can answer questions about: '
             . $categoryList . '. '
             . 'If the user asks where to find something or how to navigate to a page, use find_page_location and present results as markdown links: [Label](url). '
+            . 'If the user asks how to carry out a process (how to register a sale, how to cut the cash register, how to create an invoice, how to add a product, how to register an expense, etc.), use search_help_guides and present the matching guide as a markdown link: [Guide title](url). Prefer the specific guide over the module page; if several guides are relevant, list up to three. You can combine find_page_location (where the page lives) with search_help_guides (how to do the process). If no guide matches, use list_help_center_modules and offer the help center URL. Never invent help center URLs. '
             . 'You can also generate downloadable Excel exports of the product catalog. '
             . $writeModeInstructions;
     }
