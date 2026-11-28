@@ -26,6 +26,12 @@ export default defineConfig({
             ]
         })
     ],
+    // The inference Web Worker imports ONNX Runtime Web and zxing-wasm, so it is
+    // built as an ES module (code splitting is required for that). Nothing else
+    // in the app changes: the main bundle stays an ES module as before.
+    worker: {
+        format: 'es',
+    },
     //comentar los siguientes bloques si no se usa el dominio ezyventas2.test
     // server: {
     //     detectTls: 'ezyventas2.test',

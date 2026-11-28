@@ -43,6 +43,7 @@ require __DIR__ . '/web/email-verification.php';
 require __DIR__ . '/tienda.php';
 
 require __DIR__ . '/web/POS.php';
+require __DIR__ . '/web/smart-checkout.php';
 require __DIR__ . '/web/products.php';
 require __DIR__ . '/web/products-stock.php';
 require __DIR__ . '/web/products-reports.php';
