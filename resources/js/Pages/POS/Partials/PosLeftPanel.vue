@@ -23,9 +23,13 @@ const props = defineProps({
     cartItems: { type: Array, default: () => [] },
     posMode: { type: String, default: 'retail' },
     hasOnlineStore: { type: Boolean, default: false },
+    // Weighing (bulk products). Null when the scale is disabled for the business.
+    scale: { type: Object, default: null },
+    // "Modo Caja Inteligente": { enabled, active }.
+    smartCheckout: { type: Object, default: () => ({ enabled: false, active: false }) },
 });
 
-const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal', 'update:posMode']);
+const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal', 'update:posMode', 'openScale', 'openPreferences', 'toggleSmartCheckout']);
 const confirm = useConfirm();
 const { isEnabled: numpadEnabled, toggle: toggleNumpad } = useVirtualNumpad();
 
@@ -318,6 +322,24 @@ const handleProductCreated = (newProduct) => {
 
                     <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded 
                         v-tooltip.bottom="'Agregar producto'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
+
+                    <!-- Modo Caja Inteligente (ON/OFF). Solo si el negocio lo tiene habilitado. -->
+                    <Button v-if="smartCheckout?.enabled" @click="$emit('toggleSmartCheckout')" icon="pi pi-microchip-ai" rounded
+                        v-tooltip.bottom="smartCheckout?.active ? 'Apagar el Modo Caja Inteligente' : 'Activar el Modo Caja Inteligente'"
+                        :aria-pressed="Boolean(smartCheckout?.active)"
+                        :class="smartCheckout?.active
+                            ? '!w-10 !h-10 !bg-primary-50 dark:!bg-primary-900/30 !border-primary-300 dark:!border-primary-800/50 !text-primary-500 hover:!border-primary-500 transition-colors shadow-[0_0_10px_rgba(246,140,15,0.35)]'
+                            : '!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors'" />
+
+                    <!-- Acceso rápido a productos a granel (solo si la báscula está habilitada) -->
+                    <Button v-if="scale?.enabled && scale?.can_use" @click="$emit('openScale')" icon="pi pi-box" rounded
+                        v-tooltip.bottom="'Productos a granel'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-emerald-600 dark:!text-emerald-400 hover:!border-emerald-500 transition-colors" />
+
+                    <!-- Preferencias de caja (encender/apagar báscula). Visible a quien puede configurarla. -->
+                    <Button v-if="scale?.can_configure" @click="$emit('openPreferences')" icon="pi pi-sliders-h" rounded
+                        v-tooltip.bottom="'Preferencias de caja'"
                         class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
                     <Button @click="toggleMenu" icon="pi pi-wallet" rounded 
                         v-tooltip.bottom="'Resumen de sesión'"

@@ -24,3 +24,16 @@ Homestead.yaml
 Thumbs.db
 public/videos
 /public/downloads/*.apk
+
+# Fase 3 — Caja Inteligente: pipeline de modelos (no se versionan binarios ni entornos).
+# Los artefactos se regeneran con tools/ml/prepare_models.py; los manifiestos de
+# public/models/*.json sí son versionables.
+/tools/ml/.venv/
+/tools/ml/models_src/
+/tools/ml/models_build/
+/tools/ml/synthetic/
+/tools/ml/__pycache__/
+/tools/ml/.install.log
+/public/models/*.onnx
+/public/models/*.onnx.data
+/public/models/*.bin

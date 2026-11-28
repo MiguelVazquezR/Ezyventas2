@@ -1,0 +1,24 @@
+# Fase 3 — Modo Caja Inteligente · dependencias del pipeline de modelos
+#
+# Instalación reproducible (Windows, PowerShell; requiere Python 3.10+ x64):
+#   C:\Users\windows 11\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe -m venv tools\ml\.venv
+#   .\tools\ml\.venv\Scripts\python.exe -m pip install --upgrade pip
+#   .\tools\ml\.venv\Scripts\python.exe -m pip install -r tools\ml\requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# En otra máquina con Python 3.10+ en el PATH basta:
+#   python -m venv tools/ml/.venv
+#   tools/ml/.venv/Scripts/python.exe -m pip install -r tools/ml/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+#   (Linux/macOS: tools/ml/.venv/bin/python)
+#
+# El índice extra es SOLO para bajar las ruedas CPU de PyTorch. No se instala CUDA:
+# el sufijo "+cpu" lo garantiza. Verificado en este equipo el 2026-11-27 con
+# Python 3.12.14 (Windows 11 x64). No se usa torchvision ni ultralytics.
+
+torch==2.9.1+cpu
+transformers==4.57.6
+onnx==1.19.1
+onnxruntime==1.23.2
+huggingface_hub==0.36.2
+safetensors==0.8.0
+numpy==2.3.5
+pillow==12.3.0

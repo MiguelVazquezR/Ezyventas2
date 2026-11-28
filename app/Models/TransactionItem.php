@@ -29,7 +29,9 @@ class TransactionItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:2',
+            // 3 decimals: a bulk product is sold by weight (0.750 kg). The column
+            // is decimal(10,3); casting to 2 rounded 0.001-0.009 away on read.
+            'quantity' => 'decimal:3',
             'unit_price' => 'decimal:2',
             'discount_amount' => 'decimal:2',
             'tax_amount' => 'decimal:2',
