@@ -18,9 +18,12 @@ use App\Models\ServiceOrder;
 use App\Models\Order;
 use App\Models\Transaction;
 use App\Services\Catalog\ProductCatalogService;
+use App\Services\SmartCheckout\SmartPosSettingsService;
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Validation\Rule;
@@ -41,6 +44,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public function __construct(
         protected TransactionPaymentService $transactionPaymentService,
         private readonly ProductCatalogService $productCatalog,
+        private readonly SmartPosSettingsService $smartPosSettings,
     ) {}
 
     public function index(Request $request): Response
@@ -113,6 +117,13 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->whereIn('context_type', [TemplateContextType::POS, TemplateContextType::GENERAL])
             ->get();
 
+        // Bulk scale ("Modo Caja Inteligente"): the business preference decides
+        // whether the cashier can weigh at all; the permissions only refine it.
+        // One read of the row feeds the whole prop (flags + settings).
+        $smartPosRow = $this->smartPosSettings->forSubscription((int) $user->branch->subscription_id);
+        $scaleEnabled = (bool) $smartPosRow->scale_enabled;
+        $smartCheckoutEnabled = (bool) $smartPosRow->smart_checkout_enabled;
+
         $props = [
             'products' => $this->getProductsData($search, $categoryId),
             'categories' => Category::getPosCategories($user->branch->subscription_id, $branchId),
@@ -126,6 +137,31 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'availableTemplates' => $availableTemplates,
             'userBankAccounts' => $userBankAccounts,
             'hasOnlineStore' => in_array('module_online_store', $user->branch?->subscription?->getActiveModuleKeys() ?? [], true),
+            'scale' => [
+                'enabled' => $scaleEnabled,
+                // The scale has no permission of its own: every POS user may use
+                // and configure it. Only the business preference can hide it.
+                'can_use' => true,
+                'can_configure' => true,
+                'settings' => $scaleEnabled
+                    ? $this->smartPosSettings->normalizeScaleSettings($smartPosRow->scale_settings)
+                    : null,
+                // The switches themselves, so the panel can render them even
+                // while the feature is off.
+                'preferences' => [
+                    'scale' => (bool) $smartPosRow->scale_enabled,
+                    'smart_checkout' => (bool) $smartPosRow->smart_checkout_enabled,
+                ],
+            ],
+            // "Modo Caja Inteligente": the business preference decides whether the
+            // cashier can turn the mode on at all. Reuses the row read above, so
+            // the POS page still issues one single query for the module.
+            'smartCheckout' => [
+                'enabled' => $smartCheckoutEnabled,
+                'settings' => $smartCheckoutEnabled
+                    ? $this->smartPosSettings->normalizeSmartCheckoutSettings($smartPosRow->smart_checkout_settings)
+                    : null,
+            ],
         ];
 
         $agent = new Agent();
@@ -226,7 +262,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems' => 'required|array|min:1',
             'cartItems.*.id' => 'required|exists:products,id',
             'cartItems.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
-            'cartItems.*.quantity' => 'required|numeric|min:1',
+            // No `min` here on purpose: a bulk product sold with the scale needs
+            // 0.750 kg. The minimum of every line is enforced by
+            // assertWeighableQuantities() right after this block, so with the
+            // scale disabled the rule behaves exactly as the old `min:1`.
+            'cartItems.*.quantity' => 'required|numeric',
             'cartItems.*.unit_price' => 'required|numeric|min:0',
             'cartItems.*.description' => 'required|string',
             'cartItems.*.discount' => 'required|numeric',
@@ -246,6 +286,14 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ]);
 
         $user = Auth::user();
+
+        // Decision D1: fractional quantities are only allowed for weighable
+        // products and only while the business has the scale enabled.
+        $this->assertWeighableQuantities(
+            $validated['cartItems'],
+            $this->smartPosSettings->scaleEnabledFor($user),
+        );
+
         $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
 
         try {
@@ -458,6 +506,112 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'label' => $s->label(),
                 ])->values(),
         ]);
+    }
+
+    /**
+     * Enforces the minimum quantity of every cart line at checkout.
+     *
+     * `cartItems.*.quantity` lost its `min:1` rule because a bulk product sold
+     * with the scale must accept 0.750 kg (decision D1). With the scale disabled
+     * this method reproduces the previous behaviour exactly — every line needs at
+     * least 1 unit and the error message is the one Laravel itself produces for
+     * `min:1` — and it makes no database query at all.
+     *
+     * With the scale enabled, only bulk products of the cashier's branch sold by
+     * weight accept 0.001; anything else keeps requiring 1.
+     *
+     * @param  array<int, array<string, mixed>>  $cartItems
+     *
+     * @throws ValidationException
+     */
+    private function assertWeighableQuantities(array $cartItems, bool $scaleEnabled): void
+    {
+        if (!$scaleEnabled) {
+            foreach ($cartItems as $index => $item) {
+                $this->assertMinimumQuantity(
+                    (int) $index,
+                    (float) ($item['quantity'] ?? 0),
+                    1,
+                );
+            }
+
+            return;
+        }
+
+        $weighableProductIds = $this->weighableProductIds(
+            array_map(static fn ($item) => (int) ($item['id'] ?? 0), $cartItems),
+            (int) Auth::user()->branch_id,
+        );
+
+        foreach ($cartItems as $index => $item) {
+            $isWeighable = in_array((int) ($item['id'] ?? 0), $weighableProductIds, true);
+
+            $this->assertMinimumQuantity(
+                (int) $index,
+                (float) ($item['quantity'] ?? 0),
+                $isWeighable ? 0.001 : 1,
+            );
+        }
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function assertMinimumQuantity(int $index, float $quantity, float $minimum): void
+    {
+        if ($quantity >= $minimum) {
+            return;
+        }
+
+        $attribute = 'cartItems.' . $index . '.quantity';
+
+        // The message is rebuilt with a real validation instead of being copied,
+        // so the wording stays identical to what the `numeric|min:N` rule produced
+        // (Spanish translations live in lang/es/validation.php). The index is kept
+        // in the payload so the message names the offending line.
+        $reference = Validator::make(
+            ['cartItems' => [$index => ['quantity' => $quantity]]],
+            ['cartItems.*.quantity' => 'required|numeric|min:' . $minimum],
+        );
+
+        $message = (string) $reference->errors()->first($attribute);
+
+        if ($message === '') {
+            $message = (string) trans('validation.min.numeric', [
+                'attribute' => $attribute,
+                'min' => $minimum,
+            ]);
+        }
+
+        throw ValidationException::withMessages([
+            $attribute => $message,
+        ]);
+    }
+
+    /**
+     * Cart product ids that can be weighed: bulk products of the branch whose
+     * measure unit is a weight unit (D3). One query for the whole cart.
+     *
+     * @param  array<int, int>  $productIds
+     * @return array<int, int>
+     */
+    private function weighableProductIds(array $productIds, int $branchId): array
+    {
+        $productIds = array_values(array_unique(array_filter($productIds)));
+
+        if ($productIds === []) {
+            return [];
+        }
+
+        return Product::query()
+            ->whereIn('id', $productIds)
+            ->whereHas('branches', fn ($query) => $query->where('branches.id', $branchId))
+            ->get(['id', 'is_bulk', 'measure_unit'])
+            ->filter(fn (Product $product) => $product->is_bulk
+                && SmartPosSettingsService::isWeightUnit($product->measure_unit))
+            ->pluck('id')
+            ->map(static fn ($id) => (int) $id)
+            ->all();
     }
 
     /**

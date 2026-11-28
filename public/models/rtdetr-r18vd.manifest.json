@@ -1,0 +1,270 @@
+{
+  "schema": "smartpos.model_manifest.v1",
+  "name": "RT-DETR-R18vd",
+  "role": "detector",
+  "model_version": "rtdetr-r18vd-onnx-2026-11",
+  "variant": "fp32",
+  "file": "rtdetr-r18vd-fe0e4d6583e1.onnx",
+  "sha256": "fe0e4d6583e1efe34587220220cff59192e44bda5c75133846ee7406e2476aba",
+  "bytes": 81130202,
+  "input": {
+    "name": "pixel_values",
+    "shape": [
+      "batch",
+      3,
+      640,
+      640
+    ],
+    "dtype": "float32",
+    "preprocessing": {
+      "color_order": "RGB",
+      "layout": "NCHW",
+      "resize": {
+        "mode": "exact",
+        "height": 640,
+        "width": 640,
+        "interpolation": "bilinear",
+        "antialias": true
+      },
+      "rescale": {
+        "factor": 0.00392156862745098,
+        "formula": "value/255"
+      },
+      "normalize": {
+        "enabled": false,
+        "mean": null,
+        "std": null,
+        "notes": "El preprocessor_config.json de PekingU/rtdetr_r18vd trae do_normalize=false: NO se resta media ni se divide por desviación. Entrada en [0,1]."
+      },
+      "notes": "RTDetrImageProcessor con do_resize=true, size={height:640,width:640}, resample=bilinear, do_rescale=true, do_normalize=false, do_pad=false."
+    }
+  },
+  "output": {
+    "names": [
+      "logits",
+      "pred_boxes"
+    ],
+    "logits": {
+      "name": "logits",
+      "shape": [
+        "batch",
+        300,
+        80
+      ],
+      "dtype": "float32",
+      "description": "Logits por query y clase COCO-80. Aplicar sigmoid."
+    },
+    "pred_boxes": {
+      "name": "pred_boxes",
+      "shape": [
+        "batch",
+        300,
+        4
+      ],
+      "dtype": "float32",
+      "description": "Cajas cx,cy,w,h normalizadas a [0,1] respecto a la entrada 640x640. No requieren sigmoid."
+    },
+    "classes": [
+      "person",
+      "bicycle",
+      "car",
+      "motorbike",
+      "aeroplane",
+      "bus",
+      "train",
+      "truck",
+      "boat",
+      "traffic light",
+      "fire hydrant",
+      "stop sign",
+      "parking meter",
+      "bench",
+      "bird",
+      "cat",
+      "dog",
+      "horse",
+      "sheep",
+      "cow",
+      "elephant",
+      "bear",
+      "zebra",
+      "giraffe",
+      "backpack",
+      "umbrella",
+      "handbag",
+      "tie",
+      "suitcase",
+      "frisbee",
+      "skis",
+      "snowboard",
+      "sports ball",
+      "kite",
+      "baseball bat",
+      "baseball glove",
+      "skateboard",
+      "surfboard",
+      "tennis racket",
+      "bottle",
+      "wine glass",
+      "cup",
+      "fork",
+      "knife",
+      "spoon",
+      "bowl",
+      "banana",
+      "apple",
+      "sandwich",
+      "orange",
+      "broccoli",
+      "carrot",
+      "hot dog",
+      "pizza",
+      "donut",
+      "cake",
+      "chair",
+      "sofa",
+      "pottedplant",
+      "bed",
+      "diningtable",
+      "toilet",
+      "tvmonitor",
+      "laptop",
+      "mouse",
+      "remote",
+      "keyboard",
+      "cell phone",
+      "microwave",
+      "oven",
+      "toaster",
+      "sink",
+      "refrigerator",
+      "book",
+      "clock",
+      "vase",
+      "scissors",
+      "teddy bear",
+      "hair drier",
+      "toothbrush"
+    ]
+  },
+  "license": "apache-2.0",
+  "license_url": "https://huggingface.co/PekingU/rtdetr_r18vd/blob/ac77a11ff0170a41b771c03264987f8ce2b0d753/README.md",
+  "source_url": "https://huggingface.co/PekingU/rtdetr_r18vd",
+  "source_commit": "ac77a11ff0170a41b771c03264987f8ce2b0d753",
+  "source_gated": false,
+  "onnx": {
+    "opset": 17,
+    "ir_version": 8,
+    "dynamic_batch": true
+  },
+  "validated": {
+    "samples": 8,
+    "sample_files": [
+      "public/images/banner_forgot_password.webp",
+      "public/images/banner_register.webp",
+      "public/images/error.png",
+      "public/images/Mercado_Pago_logo.webp",
+      "tools/ml/models_build/samples/synthetic-00.png",
+      "tools/ml/models_build/samples/synthetic-01.png",
+      "tools/ml/models_build/samples/synthetic-02.png",
+      "tools/ml/models_build/samples/synthetic-03.png"
+    ],
+    "iou_mean": 0.99998863,
+    "iou_min": 0.99873447,
+    "max_score_diff": 1.732e-05,
+    "discrepancies": [],
+    "discrepancies_total": 0,
+    "top100": {
+      "queries_compared": 800,
+      "iou_mean": 0.99999656,
+      "iou_min": 0.99984068,
+      "score_drop_mean": -4e-08,
+      "score_drop_max": 1.182e-05,
+      "class_agreement": 1.0,
+      "high_confidence": {
+        "threshold": 0.3,
+        "queries": 24,
+        "iou_mean": 0.99999947,
+        "iou_min": 0.99999874,
+        "score_drop_mean": -2e-08
+      },
+      "discrepancies": [],
+      "discrepancies_total": 0
+    },
+    "passed": true,
+    "chosen_variant": "fp32",
+    "chosen_quality": {
+      "iou_mean": 0.99998863,
+      "iou_min": 0.99873447,
+      "max_score_diff": 1.732e-05
+    }
+  },
+  "variants": {
+    "fp32": {
+      "file": "rtdetr-r18vd-fp32.onnx",
+      "bytes": 81130202,
+      "latency_ms": {
+        "mean": 176.68,
+        "p95": 182.33,
+        "runs": 15,
+        "batch": 1
+      },
+      "quality": {
+        "iou_mean": 0.99998863,
+        "iou_min": 0.99873447,
+        "max_score_diff": 1.732e-05
+      },
+      "adopted": true
+    },
+    "int8": {
+      "file": "rtdetr-r18vd-int8.onnx",
+      "bytes": 68296770,
+      "latency_ms": {
+        "mean": 167.23,
+        "p95": 175.14,
+        "runs": 15,
+        "batch": 1
+      },
+      "quality": {
+        "iou_mean": 0.17349666,
+        "iou_min": 0.0,
+        "score_drop_mean": 0.02222985,
+        "high_confidence": {
+          "threshold": 0.3,
+          "queries": 24,
+          "iou_mean": 0.72408949,
+          "iou_min": 0.0,
+          "score_drop_mean": 0.08126023
+        }
+      },
+      "adopted": false,
+      "decision": "rechazada: IoU medio top-100 0.17349666 < 0.98 (score>=0.3: 0.72408949)"
+    },
+    "fp16": {
+      "file": "rtdetr-r18vd-fp16.onnx",
+      "bytes": 41011953,
+      "latency_ms": {
+        "mean": 225.5,
+        "p95": 232.87,
+        "runs": 15,
+        "batch": 1
+      },
+      "quality": {
+        "iou_mean": 0.58994246,
+        "iou_min": 0.0,
+        "score_drop_mean": 0.01021441,
+        "high_confidence": {
+          "threshold": 0.3,
+          "queries": 24,
+          "iou_mean": 0.99817039,
+          "iou_min": 0.99618799,
+          "score_drop_mean": 0.00242114
+        }
+      },
+      "adopted": false,
+      "decision": "rechazada: IoU medio top-100 0.58994246 < 0.98; en score>=0.3 IoU 0.99817039, pero sin ventaja de latencia en CPU (225.5 ms vs 176.68 ms) y fp16 no es portable a WASM"
+    }
+  },
+  "created_at": "2026-11-27T22:56:08+00:00",
+  "generated_by": "tools/ml/prepare_models.py"
+}

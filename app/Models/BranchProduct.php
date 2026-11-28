@@ -19,9 +19,11 @@ class BranchProduct extends Pivot
     ];
 
     protected $casts = [
-        'current_stock' => 'decimal:2',
-        'reserved_stock' => 'decimal:2',
-        'min_stock' => 'decimal:2',
-        'max_stock' => 'decimal:2',
+        // The pivot columns are decimal(10,3): keep the third decimal so a bulk
+        // product sold by weight does not lose its gram precision on read.
+        'current_stock' => 'decimal:3',
+        'reserved_stock' => 'decimal:3',
+        'min_stock' => 'decimal:3',
+        'max_stock' => 'decimal:3',
     ];
 }

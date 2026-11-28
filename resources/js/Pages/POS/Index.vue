@@ -1,7 +1,8 @@
 <script setup>
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, onBeforeUnmount, defineAsyncComponent, reactive, shallowRef } from 'vue';
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
 import ShoppingCart from './Partials/ShoppingCart.vue';
@@ -27,6 +28,10 @@ const props = defineProps({
     joinableSessions: Array,
     userBankAccounts: Array,
     hasOnlineStore: Boolean,
+    // Weighing (bulk products). Null when the scale is disabled for the business.
+    scale: Object,
+    // "Modo Caja Inteligente" (recognition). Null when disabled for the business.
+    smartCheckout: Object,
 });
 
 const page = usePage();
@@ -50,10 +55,14 @@ const isCloseSessionModalVisible = ref(false);
 const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
+// Sale id of the last checkout, used by the smart checkout session to report it.
+const lastCheckoutSaleId = ref(null);
 
 watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
         printDataSource.value = newPrintData;
+        // Keep the sale id: the smart checkout session reports it when the sale closes.
+        lastCheckoutSaleId.value = newPrintData.id ?? null;
         isPrintModalVisible.value = true;
         page.props.flash.print_data = null;
     }
@@ -80,6 +89,17 @@ onMounted(() => {
 
     if (savedPending) {
         try { pendingCarts.value = JSON.parse(savedPending); } catch (e) { console.error('Error restaurando carritos pendientes', e); }
+    }
+
+    // The mode is remembered per terminal (decision D2). Only when the cashier
+    // left it on do we load the session and start the engine again.
+    if (smartCheckoutEnabled.value) {
+        (async () => {
+            const { readTerminalMode } = await import('./SmartCheckout/useSmartCheckout.js');
+            if (!readTerminalMode(terminalUser(), terminalBranch()).active) return;
+            const session = await loadSmartSession();
+            await session.activate();
+        })();
     }
 });
 
@@ -131,12 +151,13 @@ const getPriceForQuantity = (productData, quantity) => {
 };
 
 const addToCart = (data) => {
-    const { product, variant } = data;
+    const { product, variant, quantity } = data;
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
     const stock = variant ? variant.stock : product.stock;
-    const quantityToAdd = 1;
-    const targetQuantity = existingItem ? existingItem.quantity + quantityToAdd : 1;
+    // Bulk products arrive with a decimal weight; everything else keeps adding 1.
+    const quantityToAdd = Number(quantity) > 0 ? roundQuantity(Number(quantity)) : 1;
+    const targetQuantity = existingItem ? roundQuantity(existingItem.quantity + quantityToAdd) : quantityToAdd;
 
     const productBaseDataForCalc = {
         selling_price: product.selling_price,
@@ -236,13 +257,212 @@ const updateCartPrice = ({ itemId, price }) => {
 };
 
 const removeCartItem = (itemId) => {
+    const item = cartItems.value.find(i => i.cartItemId === itemId);
     cartItems.value = cartItems.value.filter(i => i.cartItemId !== itemId);
+    // Fase 4: si esa línea la había puesto el Modo Caja Inteligente, borrarla es
+    // una corrección del cajero y se registra (y aprende) desde la sesión.
+    // `smartSession` puede no existir todavía: el modo se importa bajo demanda.
+    smartSession.value?.reportCartRemoval?.(item);
 };
 
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
     isPaymentModalVisible.value = false;
+};
+
+// --- Báscula (productos a granel) ---
+// Everything here is inert unless the business enabled the scale: the panel and
+// its settings are loaded with a dynamic import on demand, so a POS with the
+// scale off never downloads this code.
+const scaleEnabled = computed(() => Boolean(props.scale?.enabled));
+const canUseScale = computed(() => scaleEnabled.value && Boolean(props.scale?.can_use));
+const canConfigureScale = computed(() => Boolean(props.scale?.can_configure));
+
+// Async components: Vite emits a separate chunk and it is fetched only when the
+// component is actually rendered, so a POS with the scale off never downloads it.
+const ScalePanel = defineAsyncComponent(() => import('./SmartCheckout/ScalePanel.vue'));
+const ScaleSettingsModal = defineAsyncComponent(() => import('./SmartCheckout/ScaleSettingsModal.vue'));
+const ScalePreferencesModal = defineAsyncComponent(() => import('./SmartCheckout/ScalePreferencesModal.vue'));
+
+const isScalePanelVisible = ref(false);
+const isScaleSettingsVisible = ref(false);
+const isScalePreferencesVisible = ref(false);
+const scaleProduct = ref(null);
+const scaleProducts = ref([]);
+const scaleProductsLoading = ref(false);
+
+/** A product is weighable when it is bulk AND sold by weight (kg / grams). */
+const isWeighableProduct = (product) => {
+    if (!product?.is_bulk) return false;
+    const unit = String(product.measure_unit ?? '').trim().toLowerCase();
+    return ['kg', 'kgs', 'g', 'gr', 'grs', 'gramo', 'gramos'].includes(unit);
+};
+
+/** Money and weights use 2 and 3 decimals respectively across the POS. */
+const roundQuantity = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
+
+const loadWeighableProducts = async (search = '') => {
+    if (!canUseScale.value) return;
+    scaleProductsLoading.value = true;
+    try {
+        const { data } = await axios.get(route('pos.smart-checkout.scale.products'), {
+            params: search ? { search } : {},
+        });
+        scaleProducts.value = Array.isArray(data?.data) ? data.data : [];
+    } catch (error) {
+        scaleProducts.value = [];
+        toast.add({
+            severity: 'error',
+            summary: 'Báscula no disponible',
+            detail: error?.response?.data?.message || 'No se pudieron cargar los productos a granel.',
+            life: 4000,
+        });
+    } finally {
+        scaleProductsLoading.value = false;
+    }
+};
+
+const openScalePanel = async (product = null) => {
+    scaleProduct.value = product;
+    isScalePanelVisible.value = true;
+    if (!product && !scaleProducts.value.length) await loadWeighableProducts();
+};
+
+/**
+ * Single entry point for every "add to cart" in this page: bulk products go to
+ * the scale first, everything else keeps the untouched POS behaviour.
+ */
+const handleAddToCart = (data) => {
+    if (canUseScale.value && !data?.quantity && isWeighableProduct(data?.product)) {
+        openScalePanel(data.product);
+        return;
+    }
+    addToCart(data);
+};
+
+const handleScaleAdd = (payload) => {
+    if (!payload?.product) return;
+    if (payload.pick) {
+        // Selected from the "granel" list: keep the panel open to weigh it.
+        scaleProduct.value = payload.product;
+        return;
+    }
+    // Same POS action the product cards use, now carrying the weighed quantity.
+    addToCart({ product: payload.product, quantity: payload.quantity });
+    toast.add({
+        severity: 'success',
+        summary: 'Producto agregado',
+        detail: `${payload.product.name} · ${payload.quantity} ${payload.unit || payload.product.measure_unit || 'kg'}`,
+        life: 2500,
+    });
+};
+
+const openScaleSettings = () => {
+    isScalePanelVisible.value = false;
+    isScaleSettingsVisible.value = true;
+};
+
+// --- Modo Caja Inteligente (reconocimiento) ---
+// The session (and with it the engine) is imported dynamically the first time the
+// cashier turns the mode on: with the mode off nothing new is downloaded.
+const smartCheckoutEnabled = computed(() => Boolean(props.smartCheckout?.enabled));
+const smartSession = shallowRef(null);
+const SmartCheckoutPanel = defineAsyncComponent(() => import('./SmartCheckout/SmartCheckoutPanel.vue'));
+const SmartCheckoutIndicators = defineAsyncComponent(() => import('./SmartCheckout/SmartCheckoutIndicators.vue'));
+
+const terminalUser = () => page.props.auth?.user?.id ?? null;
+const terminalBranch = () => page.props.auth?.current_branch?.id ?? null;
+
+/** Everything the engine detects ends up here, on the same action the cards use. */
+const handleSmartCheckoutAdd = (product, meta = {}) => {
+    if (!product) return;
+    if (canUseScale.value && isWeighableProduct(product)) {
+        // Bulk products are weighed before they reach the cart.
+        openScalePanel(product);
+        return;
+    }
+    // `quantity` comes from the camera fusion (1 unless the cameras counted more).
+    addToCart({ product, quantity: Number(meta.quantity) > 1 ? Number(meta.quantity) : undefined });
+    if (meta.source === 'auto') {
+        toast.add({ severity: 'success', summary: 'Agregado automático', detail: product.name, life: 1800 });
+    }
+};
+
+const loadSmartSession = async () => {
+    if (smartSession.value) return smartSession.value;
+    const { useSmartCheckout } = await import('./SmartCheckout/useSmartCheckout.js');
+    smartSession.value = reactive(useSmartCheckout({
+        settings: props.smartCheckout?.settings,
+        products: props.products?.data ?? [],
+        userId: terminalUser(),
+        branchId: terminalBranch(),
+        // La galería de vectores es de la suscripción; el POS no la recibe como
+        // prop, pero sí la sucursal actual (con su subscription_id).
+        subscriptionId: page.props.auth?.current_branch?.subscription_id ?? null,
+        onAdd: handleSmartCheckoutAdd,
+    }));
+    return smartSession.value;
+};
+
+const toggleSmartCheckout = async () => {
+    if (!smartCheckoutEnabled.value) return;
+    const session = await loadSmartSession();
+    if (session.active) {
+        await session.deactivate();
+        return;
+    }
+    const started = await session.activate();
+    if (!started) {
+        toast.add({
+            severity: 'error',
+            summary: 'No se pudo activar',
+            detail: session.error || 'El motor de reconocimiento no arrancó.',
+            life: 5000,
+        });
+    }
+};
+
+/**
+ * Un producto se dio de alta desde el panel del modo (alta rápida).
+ *
+ * El panel **ya lo agregó al carrito** al resolver el producto desconocido
+ * (`session.resolveUnknown` → `onAdd` → `addToCart`), así que aquí sólo se refresca
+ * el catálogo para que el producto nuevo exista también como tarjeta. Volver a
+ * llamar a `addToCart` lo agregaba dos veces: era un fallo real de la Fase 3 que
+ * se corrigió al revisar los caminos de error de la Fase 5.
+ */
+const handleSmartProductCreated = (product) => {
+    void product;
+    router.get(route('pos.index'), props.filters, { preserveState: true, only: ['products'] });
+};
+
+/** The cashier closed a sale: record it so the daily indicators stay honest. */
+const notifySaleClosed = () => {
+    if (!smartSession.value?.active) return;
+    const saleId = lastCheckoutSaleId.value ?? page.props.flash?.print_data?.id ?? null;
+    lastCheckoutSaleId.value = null;
+    void smartSession.value.onSaleClosed(saleId);
+};
+
+// Leaving the POS stops the engine and flushes the pending metrics.
+onBeforeUnmount(() => {
+    void smartSession.value?.deactivate();
+});
+
+const openScalePreferences = () => {
+    isScalePreferencesVisible.value = true;
+};
+
+/** The business preferences live in the backend: reload only those props. */
+const handlePreferencesSaved = (payload = {}) => {
+    scaleProducts.value = [];
+    router.reload({
+        only: ['scale', 'smartCheckout'],
+        onSuccess: () => {
+            if (payload.configure && canUseScale.value) openScaleSettings();
+        },
+    });
 };
 
 // --- Clientes y Carritos Pendientes ---
@@ -438,6 +658,10 @@ const handleCheckout = (checkoutData) => {
         onSuccess: () => {
             clearCart();
             page.props.flash.success = null;
+            // Smart checkout: close the session of the sale that was just registered.
+            if (transactionType === 'contado' || transactionType === 'credito') {
+                notifySaleClosed();
+            }
             // MODIFICACIÓN CLAVE: recarga manteniendo filtros pero forzando fresh data
             router.get(route('pos.index'), props.filters, { only: ['products'], preserveState: true, preserveScroll: false });
         },
@@ -464,16 +688,24 @@ const cartSubtotal = computed(() => {
         
         <!-- Sesión Activa -->
         <template v-if="activeSession">
+            <!-- Indicadores del Modo Caja Inteligente (solo con el modo activo) -->
+            <component v-if="smartSession?.active && SmartCheckoutIndicators" :is="SmartCheckoutIndicators"
+                :session="smartSession" :scale-enabled="canUseScale" />
+
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-98px)] max-w-[1920px] mx-auto">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden rounded-3xl">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
                         :filters="filters" :active-session="activeSession" :cart-items="cartItems" :pos-mode="posMode"
-                        :has-online-store="hasOnlineStore"
-                        @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
+                        :has-online-store="hasOnlineStore" :scale="scale"
+                        :smart-checkout="{ enabled: smartCheckoutEnabled, active: Boolean(smartSession?.active) }"
+                        @add-to-cart="handleAddToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                         @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                         @refresh-session-data="handleRefreshSessionData"
                         @open-history-modal="isHistoryModalVisible = true"
                         @open-close-session-modal="isCloseSessionModalVisible = true"
+                        @open-scale="openScalePanel()"
+                        @open-preferences="openScalePreferences"
+                        @toggle-smart-checkout="toggleSmartCheckout"
                         @update:posMode="posMode = $event" class="h-full" />
                 </div>
                 <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden rounded-3xl">
@@ -558,6 +790,23 @@ const cartSubtotal = computed(() => {
             :available-templates="availableTemplates" />
         <OrderFormModal v-model:visible="isOrderModalVisible" :cart-total="currentCartTotal" :client="selectedClient"
             :loading="form.processing" @submit="handleOrderSubmit" />
+
+        <!-- Báscula: solo se monta (y solo entonces se descarga su código) si el negocio la tiene activa -->
+        <component v-if="canUseScale" :is="ScalePanel" v-model:visible="isScalePanelVisible" :scale="scale"
+            :product="scaleProduct" :products="scaleProducts" :loading-products="scaleProductsLoading"
+            :user-id="page.props.auth?.user?.id" :branch-id="page.props.auth?.current_branch?.id"
+            @add="handleScaleAdd" @open-settings="openScaleSettings" @search="loadWeighableProducts" />
+        <component v-if="canUseScale && canConfigureScale" :is="ScaleSettingsModal" v-model:visible="isScaleSettingsVisible"
+            :can-configure="canConfigureScale" />
+        <component v-if="canConfigureScale" :is="ScalePreferencesModal" v-model:visible="isScalePreferencesVisible"
+            :scale="scale" @saved="handlePreferencesSaved" />
+
+        <!-- Modo Caja Inteligente: el panel solo se monta con el modo activo -->
+        <component v-if="smartSession?.active && SmartCheckoutPanel" :is="SmartCheckoutPanel"
+            :session="smartSession" :smart-checkout="smartCheckout" :products="products?.data ?? []"
+            :scale-enabled="canUseScale" :user-id="page.props.auth?.user?.id"
+            :branch-id="page.props.auth?.current_branch?.id"
+            @close="toggleSmartCheckout" @product-created="handleSmartProductCreated" />
 
         <VirtualNumpad />
     </AppLayout>

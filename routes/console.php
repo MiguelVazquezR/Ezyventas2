@@ -17,6 +17,11 @@ Schedule::job(new \App\Jobs\Billing\RefreshPendingCancelationsJob)->hourly();
 // Fase 3: preventive alerts (low stamp balance, CSD about to expire).
 Schedule::job(new \App\Jobs\Billing\CheckPreventiveAlertsJob)->dailyAt('08:00');
 
+// Caja Inteligente: borra los eventos de detección y los archivos de recorte más
+// antiguos que `smartpos_settings.retention_days` (30 días por defecto). Nunca
+// borra vectores: sólo eventos y recortes (ver docs/caja-inteligente/).
+Schedule::command('smartpos:purge')->dailyAt('02:30');
+
 // Account hibernation: warn the owner 7 days before the purge, then delete the
 // business data of accounts without sign-ins for 90 days. Both jobs also check
 // account_lifecycle.inactivity.enabled before doing anything.
